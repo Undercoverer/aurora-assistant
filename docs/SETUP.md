@@ -23,11 +23,11 @@ programs.aurora-assistant = {
     silero = "silero-vad";
     tts = "supertonic-3";
   };
-  kev.model = "qwen3:0.6b";
+  kev.model = "hf.co/ggml-org/Kev-4B-GGUF:Q4_K_M";
   ollama.model = "qwen3:4b";
   safety = {
     enable = true;
-    model = "qwen3:4b";
+    backend = "kev";
   };
 
   silenceSeconds = 0.7;
@@ -73,8 +73,8 @@ model terms for your intended use.
 
 `aurora-models.service` is a **system service** running as the configured desktop
 user. It downloads models during explicit deployment/startup provisioning. It
-pulls the Kev, planner, and reviewer models through the local Ollama service, downloads
-speech assets, checks required files and ONNX/TTS loading, and writes a manifest
+pulls the planner and optional Ollama reviewer through the local Ollama service,
+downloads the named Kev GGUF for a dedicated System One server and speech assets, checks required files and ONNX/TTS loading, and writes a manifest
 of resolved revisions, Ollama digests, and file hashes. It stages all speech files
 before atomically switching `modelDirectory/current` to the new generation.
 Failed staging does not replace an older complete generation. The new runtime

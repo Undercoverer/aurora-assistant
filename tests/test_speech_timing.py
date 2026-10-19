@@ -83,8 +83,9 @@ class FeedbackTests(unittest.IsolatedAsyncioTestCase):
             await task
         self.assertTrue(stopped.is_set())
 
-    async def test_kev_can_discover_then_act_without_large_planner(self):
+    async def test_router_interface_supports_read_then_action(self):
         agent = self.agent()
+        agent.inference.catalog = None
         agent.inference.quick_plan.side_effect = [
             {'actions': [{'name': 'desktop_read', 'argument': 'applications'}], 'reply': ''},
             {'actions': [{'name': 'launch_app', 'argument': 'org.kde.dolphin.desktop'}], 'reply': ''}]

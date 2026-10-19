@@ -10,7 +10,7 @@ of the reply, and SetLevel receives the envelope of audio at playback time.
 programs.aurora-assistant = {
   kev = {
     enable = true;
-    model = "qwen3:0.6b";
+    model = "hf.co/ggml-org/Kev-4B-GGUF:Q4_K_M";
     maxRounds = 2;
     announceEscalation = true;
     escalationMessage = "Checking that in more detail.";
@@ -20,13 +20,14 @@ programs.aurora-assistant = {
 };
 ```
 
-A common command can finish in one Kev round. A request such as "open Dolphin"
-can use one round to list applications, then a second to select an observed ID.
-Kev can similarly discover installed themes/colors or read audio state before
-choosing a value. Explicit public searches can go directly to the separate search
-path when webSearch is enabled. Generic unfamiliar D-Bus interfaces still escalate.
-All routes retain validation and the configured review policy. A smaller decision
-model does not remove the separate reviewer; review can still contribute latency.
+Kev is the actual decision model, served locally at `/v1/systemone`. It scores
+supplied choices; it does not generate commands or arbitrary arguments. Complete
+common commands such as "raise the volume to 12" supply deterministic candidates.
+Observed D-Bus property reads and methods without input arguments can also be
+selected by Kev from the [capability catalog](CAPABILITIES.md). Other requests,
+including unknown apps/themes and methods needing arguments, use the larger
+planner. The default reviewer uses Kev's noul decision in a separate request.
+Generic D-Bus mutations still require local approval.
 
 maxRounds counts toward the overall settings.maxRounds limit. Invalid replies,
 uncertainty, preparation failures, or the Kev round limit send the remaining work
@@ -100,3 +101,13 @@ the standard WAV endpoint with full-text captions at playback start.
 For manual service runs, pass
 `aurora-tts --model-dir /var/lib/aurora-models/current/supertonic --model supertonic-3 --alignment-model /var/lib/aurora-models/current/whisper-realtime`.
 The Nix module supplies this argument automatically when wordSync is enabled.
+
+## Visibility and clarification
+
+The overlay stays active through planning, execution and speech, then displays
+results for `presentation.resultSeconds` (6 by default). Errors remain for
+`presentation.errorSeconds` (10). A no-action reply ending in a question mark
+opens a wake-word-free follow-up window for `conversation.followUpSeconds` (12),
+up to `conversation.maxFollowUps` (2) consecutive replies. This punctuation-based
+clarification detection is intentionally limited; it is not open-ended chat.
+The conversation is kept only in memory and cleared when the turn finishes.

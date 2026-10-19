@@ -4,6 +4,7 @@ import asyncio
 import time
 from .actions import validate
 from .settings import READ_ACTIONS
+from .telemetry import event, phase
 
 
 class SettingsAgent:
@@ -13,6 +14,7 @@ class SettingsAgent:
 
     async def run(self, text):
         self.failed = False
+        self.awaiting_reply = False
         evidence = []
         kev = self.config.get('kev', {})
         kev_active = kev.get('enable', False)
@@ -24,8 +26,8 @@ class SettingsAgent:
                 kev_rounds += 1
                 try:
                     plan = await self.inference.quick_plan(text, evidence=evidence)
-                except Exception:
-                    pass  # Routing failure escalates without executing partial output.
+                except Exception as exc:
+                    event("kev.route_failed", error_type=type(exc).__name__)
             if plan is None:
                 kev_active = False
                 if kev.get('enable', False) and kev.get('announceEscalation', True) and not announced:
@@ -34,36 +36,23 @@ class SettingsAgent:
                                                   kev.get('escalationMessage', 'Checking that in more detail.'))
                 else:
                     plan = await self.inference.plan(text, evidence=evidence)
-            actions, reply = validate(plan, self.config['apps'], self.config.get('dbus_actions', {}), settings=self.config.get('settings', {}).get('enable', True), web_search=self.config.get("webSearch", {}).get("enable", False))
+            actions, reply = validate(
+                plan, self.config['apps'], self.config.get('dbus_actions', {}),
+                settings=self.config.get('settings', {}).get('enable', True),
+                web_search=self.config.get('webSearch', {}).get('enable', False),
+            )
             if any(a.name == 'web_search' for a in actions):
-                # Never give retrieved web text to the desktop planner or executor.
                 if len(actions) != 1 or evidence:
                     return 'Please ask the web question separately from desktop actions.'
-                from .web_search import WebSearch
-                self.approval.latest_search = None
-                try:
-                    result = await WebSearch(self.config.get('webSearch', {})).search(actions[0].argument)
-                    if not result['results']:
-                        return 'The web search returned no usable snippets. No summary was generated.'
-                    answer = await self.inference.summarize_search(text, result)
-                    self.approval.latest_search = {**answer, 'retrievedAt': result['retrievedAt'], 'basis': result['basis']}
-                    return answer['summary'] + ' This answer uses search snippets. Source links are available through aurora-control sources.'
-                except Exception:
-                    self.failed = True
-                    return 'Web search or its local summary failed. No web answer was generated. Check the local search service and internet connection.'
+                return await self._search(text, actions[0].argument)
             if not actions:
+                self.awaiting_reply = reply.rstrip().endswith("?")
                 return reply
             reads = [a for a in actions if a.name in READ_ACTIONS]
             if reads:
                 # Proposed writes in a discovery round are discarded and replanned.
-                for action in reads:
-                    try:
-                        value = await self.desktop.read(action)
-                        data = json.dumps(value, ensure_ascii=False)
-                        result = data[:12000]
-                    except Exception as exc:
-                        result = f'Read failed: {type(exc).__name__}: {exc}'[:1000]
-                    evidence.append({'action': action.name, 'argument': action.argument, 'result': result})
+                evidence.extend(await self._observe(reads))
+                kev_active = kev.get('enable', False)
                 continue
             # Mute the microphone last so earlier operations do not lose input.
             actions = sorted(actions, key=lambda a: a.name == 'microphone_mute' and a.argument is True)
@@ -73,41 +62,80 @@ class SettingsAgent:
                 kev_active = False
                 evidence.append({'preparation_error': str(exc)[:1000], 'actions': plan['actions']})
                 continue  # No mutations have occurred; let the larger model resolve it.
-            review = {'decision': 'allow', 'reason': 'Local policy permits the supported desktop actions.'}
-            if self.config.get('safety', {}).get('enable', True):
-                try:
-                    review = await self.inference.review(text, prepared)
-                except Exception:
-                    review = {'decision': 'ask', 'reason': 'The local reviewer is unavailable or returned an invalid result.'}
-            if review['decision'] == 'block':
-                return 'No changes were made. ' + review['reason']
-            # Desktop tokens use this host's monotonic clock. Leave a short
-            # transport margin and never ask for approval beyond plan validity.
-            deadlines = [p['expires_at'] for p in prepared if 'expires_at' in p]
-            deadline = min(deadlines) - 2 if deadlines else float('inf')
-            if time.monotonic() >= deadline:
-                self.failed = True
-                return 'The prepared plan expired during review. No actions were run. Please ask again.'
-            if review['decision'] == 'ask' or any(p['requires_approval'] for p in prepared):
-                approved = await self.approval.request(
-                    {'request': text, 'plan': prepared, 'review': review}, self.overlay.message,
-                    timeout=min(120, deadline - time.monotonic()))
-                if not approved:
-                    return 'The change was not approved. No actions were run.'
-            if time.monotonic() >= deadline:
-                self.failed = True
-                return 'The prepared plan expired. No actions were run. Please ask again.'
-            await self.overlay.state('executing')
-            results = []
-            for step in prepared:
-                try:
-                    results.append(await self.desktop.execute(step))
-                except Exception:
-                    self.failed = True
-                    results.append('The next action failed or could not be verified. It may have changed state. Remaining actions were not run.')
-                    break
-            return ' '.join(results)
+            return await self._execute_plan(text, prepared)
         return 'The discovery limit was reached. No changes were made. Please narrow the request.'
+
+    async def _observe(self, actions):
+        observations = []
+        for action in actions:
+            try:
+                with phase("desktop.read", action=action.name):
+                    value = await self.desktop.read(action)
+                catalog = getattr(self.inference, 'catalog', None)
+                if catalog is not None:
+                    catalog.observe(action, value)
+                data = json.dumps(value, ensure_ascii=False)
+                result = data[:12000]
+            except Exception as exc:
+                result = f'Read failed: {type(exc).__name__}: {exc}'[:1000]
+            observations.append({'action': action.name, 'argument': action.argument, 'result': result})
+        return observations
+
+    async def _search(self, text, query):
+        from .web_search import WebSearch
+        self.approval.latest_search = None
+        try:
+            result = await WebSearch(self.config.get('webSearch', {})).search(query)
+            if not result['results']:
+                return 'The web search returned no usable snippets. No summary was generated.'
+            answer = await self.inference.summarize_search(text, result)
+            self.approval.latest_search = {**answer, 'retrievedAt': result['retrievedAt'], 'basis': result['basis']}
+            return answer['summary'] + ' This answer uses search snippets. Source links are available through aurora-control sources.'
+        except Exception:
+            self.failed = True
+            return 'Web search or its local summary failed. No web answer was generated. Check the local search service and internet connection.'
+
+    async def _review(self, text, prepared):
+        review = {'decision': 'allow', 'reason': 'Local policy permits the supported desktop actions.'}
+        if self.config.get('safety', {}).get('enable', True):
+            try:
+                review = await self.inference.review(text, prepared)
+            except Exception:
+                review = {'decision': 'ask', 'reason': 'The local reviewer is unavailable or returned an invalid result.'}
+        return review
+
+    async def _execute_plan(self, text, prepared):
+        review = await self._review(text, prepared)
+        event("review.result", decision=review["decision"])
+        if review['decision'] == 'block':
+            return 'No changes were made. ' + review['reason']
+        # Desktop tokens use this host's monotonic clock. Leave a short
+        # transport margin and never ask for approval beyond plan validity.
+        deadlines = [p['expires_at'] for p in prepared if 'expires_at' in p]
+        deadline = min(deadlines) - 2 if deadlines else float('inf')
+        if time.monotonic() >= deadline:
+            self.failed = True
+            return 'The prepared plan expired during review. No actions were run. Please ask again.'
+        if review['decision'] == 'ask' or any(p['requires_approval'] for p in prepared):
+            approved = await self.approval.request(
+                {'request': text, 'plan': prepared, 'review': review}, self.overlay.message,
+                timeout=min(120, deadline - time.monotonic()))
+            if not approved:
+                return 'The change was not approved. No actions were run.'
+        if time.monotonic() >= deadline:
+            self.failed = True
+            return 'The prepared plan expired. No actions were run. Please ask again.'
+        await self.overlay.state('executing')
+        results = []
+        for step in prepared:
+            try:
+                with phase("desktop.execute", action=step.get("action", {}).get("name", "unknown")):
+                    results.append(await self.desktop.execute(step))
+            except Exception:
+                self.failed = True
+                results.append('The next action failed or could not be verified. It may have changed state. Remaining actions were not run.')
+                break
+        return ' '.join(results)
 
     async def with_notice(self, work, message):
         task = asyncio.create_task(work)
@@ -122,6 +150,7 @@ class SettingsAgent:
             started = True
             try:
                 async with asyncio.timeout(8):
+                    await self.overlay.message(message)
                     await self.overlay.state('speaking')
                     await self.inference.speak(message, self.overlay.level, self.overlay.message)
             except Exception:

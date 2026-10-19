@@ -5,6 +5,7 @@ import math
 import os
 import re
 from dataclasses import asdict
+from .telemetry import phase, event
 
 READ_ACTIONS = {'desktop_read', 'dbus_list', 'dbus_inspect', 'dbus_get'}
 DBUS_FIELDS = {'bus', 'destination', 'path', 'interface'}
@@ -21,6 +22,7 @@ def action_schemas():
         'microphone_mute': {'type': 'boolean'},
         'theme': text,
         'launch_app': text,
+        'open_url': {'type': 'string', 'maxLength': 2048},
         'color_scheme': text,
         'desktop_read': {'enum': ['audio', 'media', 'themes', 'colors', 'applications']},
         'dbus_list': {'enum': ['session', 'system']},
@@ -33,6 +35,7 @@ def action_schemas():
         'microphone_mute': 'Set default microphone mute to the requested boolean; true prevents further speech input.',
         'theme': 'Apply an installed Plasma global theme ID obtained from desktop_read themes.',
         'color_scheme': 'Apply an installed color scheme ID obtained from desktop_read colors.',
+        'open_url': 'Open an HTTP(S) URL in the default browser through the desktop portal.',
         'launch_app': 'Open a visible installed desktop ID obtained from desktop_read applications.',
         'desktop_read': 'Read installed apps, themes, colors, default audio state, or live MPRIS players without mutation.',
         'dbus_list': 'List currently running services in the permitted scope of the selected bus.',
@@ -46,6 +49,9 @@ def action_schemas():
 
 
 def valid_action(name, arg):
+    if name == 'open_url':
+        from .portal import valid_url
+        return valid_url(arg)
     if name == 'microphone_mute':
         return type(arg) is bool
     if name == 'launch_app':
@@ -140,18 +146,20 @@ class BusAccess:
     async def call(self, bus, destination, path, interface, member, signature='', body=None):
         from dbus_next import Message, MessageType, BusType
         from dbus_next.aio import MessageBus
-        connection = None
-        try:
-            async with asyncio.timeout(45 if interface == 'org.aurora.Desktop1' else 8):
-                connection = await MessageBus(bus_type=BusType.SESSION if bus == 'session' else BusType.SYSTEM).connect()
-                reply = await connection.call(Message(destination=destination, path=path, interface=interface,
-                                                       member=member, signature=signature, body=body or []))
-            if reply.message_type != MessageType.METHOD_RETURN:
-                raise RuntimeError('D-Bus request was rejected')
-            return reply.body
-        finally:
-            if connection:
-                connection.disconnect()
+        with phase('dbus.call', bus=bus, destination=destination, interface=interface, member=member):
+            connection = None
+            try:
+                async with asyncio.timeout(45 if interface == 'org.aurora.Desktop1' else 8):
+                    connection = await MessageBus(bus_type=BusType.SESSION if bus == 'session' else BusType.SYSTEM).connect()
+                    reply = await connection.call(Message(destination=destination, path=path, interface=interface,
+                                                           member=member, signature=signature, body=body or []))
+                if reply.message_type != MessageType.METHOD_RETURN:
+                    event('dbus.rejected', error_name=reply.error_name)
+                    raise RuntimeError('D-Bus request was rejected')
+                return reply.body
+            finally:
+                if connection:
+                    connection.disconnect()
 
     async def owner(self, arg):
         if not self.allowed(arg['bus'], arg['destination']):
@@ -195,7 +203,8 @@ class BusAccess:
         return {'owner': owner, 'children': [n.name for n in node.nodes], 'interfaces': [
             {'name': i.name, 'properties': [{'name': p.name, 'signature': p.signature, 'access': p.access.value} for p in i.properties],
              'methods': [{'name': m.name, 'input': ''.join(a.signature for a in m.in_args),
-                          'output': ''.join(a.signature for a in m.out_args)} for m in i.methods]} for i in node.interfaces]}
+                          'output': ''.join(a.signature for a in m.out_args),
+                          'arguments': [{'name': a.name or '', 'signature': a.signature} for a in m.in_args]} for m in i.methods]} for i in node.interfaces]}
 
     async def prepare(self, action):
         arg = action.argument

@@ -49,6 +49,14 @@
               rm -f "$out/${final.python.sitePackages}/torio/lib/"*ffmpeg*.so
             '';
           });
+          sounddevice = prev.sounddevice.overrideAttrs (old: {
+            buildInputs = (old.buildInputs or []) ++ [ pkgs.portaudio ];
+            postInstall = (old.postInstall or "") + ''
+              substituteInPlace "$out/${final.python.sitePackages}/sounddevice.py" \
+                --replace-fail '_libname = _find_library(_libname)' \
+                '_libname = "${pkgs.lib.getLib pkgs.portaudio}/lib/libportaudio.so.2"'
+            '';
+          });
           pyaudio = prev.pyaudio.overrideAttrs (old: {
             buildInputs = (old.buildInputs or []) ++ [ pkgs.portaudio ];
             nativeBuildInputs = (old.nativeBuildInputs or []) ++ [ pkgs.pkg-config ] ++ final.resolveBuildSystem { setuptools = []; wheel = []; };
@@ -71,6 +79,9 @@
           };
         };
       in {
+        kev-server = if pkgs.lib.versionAtLeast pkgs.llama-cpp.version "0.6.0"
+          then pkgs.llama-cpp
+          else pkgs.callPackage ./nix/kev-server.nix {};
         docs = pkgs.runCommand "aurora-documentation" {} ''
           mkdir -p $out/share/doc/aurora
           cp -r ${./docs} $out/share/doc/aurora/docs
@@ -83,9 +94,11 @@
           paths = [ env ];
           nativeBuildInputs = [ pkgs.makeWrapper ];
           postBuild = ''
-            for executable in aurora-assistant aurora-tts aurora-models aurora-control aurora-desktop; do
+            for executable in aurora-assistant aurora-tts aurora-models aurora-control aurora-desktop aurora-report; do
               wrapProgram "$out/bin/$executable" \
                 --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath [ pkgs.portaudio pkgs.libsndfile pkgs.stdenv.cc.cc.lib ]}" \
+                --prefix PATH : "${pkgs.lib.makeBinPath [ pkgs.systemd pkgs.wl-clipboard ]}" \
+                --set AURORA_REVISION "${self.rev or self.dirtyRev or "unversioned"}" \
                 --set HF_HUB_OFFLINE 1 --set HF_HUB_DISABLE_TELEMETRY 1 --set TORIO_USE_FFMPEG 0
             done
           '';
@@ -138,6 +151,7 @@
           TORIO_USE_FFMPEG = "0";
           HF_HUB_OFFLINE = "1";
         } ''
+          env -i HOME="$TMPDIR" PATH=/no-external-tools ${self.packages.${system}.assistant}/bin/aurora-assistant --check-audio
           python -c 'import torch, torchaudio, sounddevice, soundfile; assert torch.version.cuda is None; print(torch.__version__, torchaudio.__version__)'
           touch $out
         '';

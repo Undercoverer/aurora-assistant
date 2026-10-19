@@ -70,11 +70,29 @@ def download(url, destination):
         raise ValueError(f'Empty model download: {destination.name}')
 
 
+def install_kev(name, revision, stage):
+    from huggingface_hub import HfApi, hf_hub_download
+    match = re.fullmatch(r'hf\.co/([^/:]+/[^/:]+):([A-Za-z0-9_]+)', name)
+    if not match:
+        raise ValueError('Kev model must use hf.co/owner/repository:QUANT format')
+    repo, quant = match.groups()
+    info = HfApi().model_info(repo, revision=revision or 'main')
+    files = HfApi().list_repo_files(repo, revision=info.sha)
+    matches = [f for f in files if f.lower().endswith('.gguf') and quant.lower() in Path(f).name.lower()]
+    if len(matches) != 1:
+        raise ValueError('Kev quantization must resolve to exactly one GGUF file')
+    source = hf_hub_download(repo, filename=matches[0], revision=info.sha)
+    shutil.copyfile(source, stage / 'kev.gguf')
+    return {'repo': repo, 'revision': info.sha, 'file': matches[0]}
+
+
 def install_assets(spec, stage):
     from openwakeword import MODELS, FEATURE_MODELS
     from supertonic.config import get_model_config
     from importlib.resources import files
     resolved = {}
+    if spec.get('kevDecisionModel'):
+        resolved['kev'] = install_kev(spec['kevDecisionModel'], spec.get('revisions', {}).get('kev'), stage)
     wake = spec['wakeWord']
     if wake not in MODELS and not spec.get('wakeSource'):
         raise ValueError(f'Unknown openWakeWord model {wake!r}; available: {", ".join(sorted(MODELS))}. A new phrase needs a trained model.')

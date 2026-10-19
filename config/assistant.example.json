@@ -50,19 +50,35 @@
   },
   "kev": {
     "enable": true,
-    "model": "qwen3:0.6b",
+    "model": "hf.co/ggml-org/Kev-4B-GGUF:Q4_K_M",
     "maxRounds": 2,
     "announceEscalation": true,
-    "escalationMessage": "Checking that in more detail."
+    "escalationMessage": "Checking that in more detail.",
+    "url": "http://127.0.0.1:8008",
+    "timeoutSeconds": 10,
+    "threshold": 0.95
   },
   "safety": {
     "enable": true,
-    "model": "qwen3:4b"
+    "model": "qwen3:4b",
+    "backend": "kev"
   },
   "webSearch": {
     "enable": false,
     "url": "http://127.0.0.1:8888",
     "maxResults": 5,
     "language": "en"
+  },
+  "diagnostics": {
+    "logContent": false
+  },
+  "presentation": {
+    "resultSeconds": 6,
+    "errorSeconds": 10,
+    "agentTimeoutSeconds": 60
+  },
+  "conversation": {
+    "followUpSeconds": 12,
+    "maxFollowUps": 2
   }
 }

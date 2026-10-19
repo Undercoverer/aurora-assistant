@@ -26,20 +26,32 @@ def load(path):
     data = json.loads(Path(path).read_text())
     data["llm"]["url"] = local_url(data["llm"]["url"])
     data["tts"]["url"] = local_url(data["tts"]["url"])
-    silence = data["stt"]["silence_seconds"]
+    _validate_stt(data["stt"])
+    _validate_policy(data)
+    _validate_apps(data["apps"])
+    from .dbus_actions import validate_registry
+    validate_registry(data.setdefault("dbus_actions", {}))
+    return data
+
+
+def _validate_number(section, key, low, high, integer=False):
+    if key not in section:
+        return
+    value = section[key]
+    kinds = (int,) if integer else (int, float)
+    if type(value) not in kinds or not low <= value <= high:
+        raise ValueError(f'{key} must be between {low} and {high}')
+
+
+def _validate_stt(stt):
+    silence = stt["silence_seconds"]
     if type(silence) not in (int, float) or not 0.2 <= silence <= 5:
         raise ValueError("silence_seconds must be between 0.2 and 5")
-    def number(section, key, low, high, integer=False):
-        if key not in section:
-            return
-        value = section[key]
-        kinds = (int,) if integer else (int, float)
-        if type(value) not in kinds or not low <= value <= high:
-            raise ValueError(f'{key} must be between {low} and {high}')
+    _validate_number(stt, 'wake_threshold', 0.01, 1)
+    _validate_number(stt, 'wake_timeout', 1, 60)
+    _validate_number(stt, 'max_utterance_seconds', 5, 300)
 
-    number(data['stt'], 'wake_threshold', 0.01, 1)
-    number(data['stt'], 'wake_timeout', 1, 60)
-    number(data['stt'], 'max_utterance_seconds', 5, 300)
+def _validate_policy(data):
     for section_name in ('settings', 'kev', 'safety', 'webSearch'):
         section = data.get(section_name, {})
         if type(section) is not dict:
@@ -49,21 +61,37 @@ def load(path):
                 raise ValueError(f'{section_name}.{key} must be boolean')
     if 'wordSync' in data['tts'] and type(data['tts']['wordSync']) is not bool:
         raise ValueError('tts.wordSync must be boolean')
-    number(data.get('settings', {}), 'maxRounds', 1, 8, integer=True)
-    number(data.get('kev', {}), 'maxRounds', 1, 4, integer=True)
-    number(data.get('webSearch', {}), 'maxResults', 1, 8, integer=True)
+    _validate_number(data.get('settings', {}), 'maxRounds', 1, 8, integer=True)
+    _validate_number(data.get('kev', {}), 'maxRounds', 1, 4, integer=True)
+    _validate_number(data.get('webSearch', {}), 'maxResults', 1, 8, integer=True)
     if 'url' in data.get('webSearch', {}):
         data['webSearch']['url'] = local_url(data['webSearch']['url'])
     for key in ('sessionPrefixes', 'systemPrefixes'):
         prefixes = data.get('settings', {}).get(key, [])
         if type(prefixes) is not list or any(type(p) is not str for p in prefixes):
             raise ValueError(f'{key} must be a list of strings')
-    for alias, desktop in data["apps"].items():
+
+    for section_name in ('presentation', 'conversation', 'diagnostics'):
+        if type(data.get(section_name, {})) is not dict:
+            raise ValueError(f'{section_name} must be an object')
+    if type(data.get('diagnostics', {}).get('logContent', False)) is not bool:
+        raise ValueError('diagnostics.logContent must be boolean')
+    for key, low, high in [('resultSeconds', 2, 60), ('errorSeconds', 3, 120), ('agentTimeoutSeconds', 10, 300)]:
+        _validate_number(data.get('presentation', {}), key, low, high)
+    _validate_number(data.get('conversation', {}), 'followUpSeconds', 0, 60)
+    _validate_number(data.get('conversation', {}), 'maxFollowUps', 0, 4, integer=True)
+    _validate_number(data.get('kev', {}), 'threshold', .5, 1)
+    _validate_number(data.get('kev', {}), 'timeoutSeconds', 1, 60)
+    if 'url' in data.get('kev', {}):
+        data['kev']['url'] = local_url(data['kev']['url'])
+    if data.get('safety', {}).get('backend', 'ollama') not in ('kev', 'ollama'):
+        raise ValueError('safety.backend must be kev or ollama')
+
+
+def _validate_apps(apps):
+    for alias, desktop in apps.items():
         if not alias or not isinstance(desktop, str) or not desktop.endswith(".desktop") or "/" in desktop or desktop.startswith("-"):
             raise ValueError("Applications must map to desktop entry filenames")
-    from .dbus_actions import validate_registry
-    validate_registry(data.setdefault("dbus_actions", {}))
-    return data
 
 
 def offline_environment():

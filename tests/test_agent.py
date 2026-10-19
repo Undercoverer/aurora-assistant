@@ -19,6 +19,7 @@ class AgentTests(unittest.IsolatedAsyncioTestCase):
                                    self.desktop, self.approval, self.overlay)
 
     async def test_discovery_then_execution(self):
+        self.inference.catalog = None
         self.inference.plan.side_effect = [plan('desktop_read', 'themes'), plan('theme', 'BreezeDark')]
         self.desktop.read.return_value = ['BreezeDark']
         self.assertEqual(await self.agent.run('Use Breeze Dark'), 'Completed.')
@@ -84,6 +85,7 @@ class KevTests(unittest.IsolatedAsyncioTestCase):
         inference.review.return_value = {'decision': 'allow', 'reason': 'Requested'}
         desktop.prepare.return_value = {'action': {'name': 'mute', 'argument': True}, 'requires_approval': False}
         desktop.execute.return_value = 'Muted.'
+        inference.catalog = None
         agent = SettingsAgent({'apps': {}, 'kev': {'enable': True}}, inference, desktop, approval, overlay)
         self.assertEqual(await agent.run('Mute speakers'), 'Muted.')
         inference.plan.assert_not_awaited()
@@ -93,6 +95,7 @@ class KevTests(unittest.IsolatedAsyncioTestCase):
         inference, desktop, approval, overlay = [AsyncMock() for _ in range(4)]
         inference.quick_plan.side_effect = ValueError('Invalid route')
         inference.plan.return_value = {'actions': [], 'reply': 'Which device?'}
+        inference.catalog = None
         agent = SettingsAgent({'apps': {}, 'kev': {'enable': True}}, inference, desktop, approval, overlay)
         self.assertEqual(await agent.run('Change that'), 'Which device?')
         inference.plan.assert_awaited_once()
@@ -103,6 +106,7 @@ class KevTests(unittest.IsolatedAsyncioTestCase):
         inference.quick_plan.return_value = plan('media', 'pause')
         desktop.prepare.side_effect = ValueError('Ambiguous player')
         inference.plan.return_value = {'actions': [], 'reply': 'Which player?'}
+        inference.catalog = None
         agent = SettingsAgent({'apps': {}, 'kev': {'enable': True}}, inference, desktop, approval, overlay)
         self.assertEqual(await agent.run('Pause'), 'Which player?')
         self.assertIn('preparation_error', inference.plan.call_args.kwargs['evidence'][0])

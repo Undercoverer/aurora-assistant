@@ -38,25 +38,26 @@ class LocalHTTPTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await client.close()
 
-    async def test_kev_route_uses_separate_model_and_rejects_bad_arguments(self):
+    async def test_kev_uses_systemone_and_rejects_uncertain_choice(self):
         import json
+        from aurora_assistant.kev import MODEL
         config = {'apps': {}, 'llm': {'url': 'http://127.0.0.1:11434/v1', 'model': 'large'},
-                  'kev': {'enable': True, 'model': 'small'}}
+                  'kev': {'enable': True, 'model': MODEL, 'url': 'http://127.0.0.1:8008'}}
         client = Inference(config)
         await client.http.aclose()
-        answers = [
-            {'actions': [{'name': 'volume', 'argument': 200}], 'reply': '', 'escalate': False},
-            {'actions': [], 'reply': '', 'escalate': True},
-            {'actions': [{'name': 'mute', 'argument': True}], 'reply': '', 'escalate': False}]
+        probabilities = [.5, .99]
         def respond(request):
+            self.assertEqual(request.url.path, '/v1/systemone')
             data = json.loads(request.content)
-            self.assertEqual(data['model'], 'small')
-            return httpx.Response(200, json={'choices': [{'message': {'content': json.dumps(answers.pop(0))}}]})
+            self.assertEqual(data['model'], MODEL)
+            self.assertNotIn('messages', data)
+            score = probabilities.pop(0)
+            return httpx.Response(200, json={'answers': {'route': {'choice': 'apply',
+                'probabilities': {'apply': score, 'escalate': 1-score}}}})
         client.http = httpx.AsyncClient(transport=httpx.MockTransport(respond))
         try:
-            with self.assertRaises(ValueError):
-                await client.quick_plan('volume')
-            self.assertIsNone(await client.quick_plan('unknown'))
-            self.assertEqual((await client.quick_plan('mute'))['actions'][0]['argument'], True)
+            self.assertIsNone(await client.quick_plan('raise the volume to 200'))
+            self.assertIsNone(await client.quick_plan('mute the speakers'))
+            self.assertEqual((await client.quick_plan('mute the speakers'))['actions'][0]['argument'], True)
         finally:
             await client.close()

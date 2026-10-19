@@ -9,7 +9,7 @@
       tts = "supertonic-3";
     };
     # All names are provisioned automatically. Invalid names fail setup.
-    kev.model = "qwen3:0.6b";
+    kev.model = "hf.co/ggml-org/Kev-4B-GGUF:Q4_K_M";
     ollama.model = "qwen3:4b";
     safety.model = "qwen3:4b";
     silenceSeconds = 0.7;

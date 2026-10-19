@@ -2,6 +2,7 @@
 import threading
 import time
 from .config import require_assets
+from .telemetry import event, content, phase
 
 
 class Voice:
@@ -45,10 +46,12 @@ class Voice:
         self.thread.start()
 
     def _started(self):
+        event("capture.speech_started")
         self.started.set()
         self.emit("state", "listening")
 
     def _finalizing(self, audio):
+        event("capture.transcribing")
         self.feeding.clear()
         self.emit("state", "transcribing")
 
@@ -68,6 +71,7 @@ class Voice:
                     elif self.armed.is_set():
                         scores = self.wake.predict(np.frombuffer(pcm, dtype=np.int16))
                         if max(scores.values(), default=0) >= self.config.get("wake_threshold", 0.5):
+                            event("wake.detected")
                             self.armed.clear()
                             self.feeding.set()
                             self.emit("state", "wake")
@@ -77,12 +81,19 @@ class Voice:
             self.awake.set()
             self.recorder.abort()
 
-    def next(self):
+    def next(self, follow_up=False, follow_up_seconds=12):
         self.recorder.clear_audio_queue()
         self.wake.reset()
         self.started.clear()
         self.awake.clear()
-        self.armed.set()
+        if follow_up:
+            self.armed.clear()
+            self.feeding.set()
+            self.awake.set()
+            self.emit('state', 'listening')
+            event('capture.follow_up', timeout_seconds=follow_up_seconds)
+        else:
+            self.armed.set()
         while not self.awake.wait(0.2):
             if self.closed.is_set() or self.capture_error:
                 break
@@ -96,8 +107,9 @@ class Voice:
             begin = time.monotonic()
             while not expired.wait(0.1):
                 age = time.monotonic() - begin
-                if ((not self.started.is_set() and age > self.config.get("wake_timeout", 8))
+                if ((not self.started.is_set() and age > (follow_up_seconds if follow_up else self.config.get("wake_timeout", 8)))
                         or age > self.config.get("max_utterance_seconds", 45)):
+                    event("capture.timeout", elapsed_seconds=round(age, 2))
                     timed_out.set()
                     self.feeding.clear()
                     self.recorder.abort()
@@ -105,7 +117,8 @@ class Voice:
         guard = threading.Thread(target=watchdog, daemon=True)
         guard.start()
         try:
-            text = self.recorder.text() or ""
+            with phase("stt.final"):
+                text = self.recorder.text() or ""
             if self.capture_error:
                 raise RuntimeError("Microphone capture failed during transcription") from self.capture_error
             return "" if timed_out.is_set() or self.closed.is_set() else text

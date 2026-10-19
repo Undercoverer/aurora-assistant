@@ -9,6 +9,7 @@ import secrets
 import socket
 import stat
 import struct
+from .telemetry import event, phase
 
 
 def socket_path():
@@ -20,6 +21,7 @@ def socket_path():
 
 class Approval:
     def __init__(self):
+        self.catalog = None
         self.pending = None
         self.latest_search = None
         self.future = None
@@ -38,6 +40,7 @@ class Approval:
                 raise ValueError('Approval socket path is occupied by another file')
             # Do not steal an active controller socket.
             probe = socket.socket(socket.AF_UNIX)
+            probe.settimeout(1)
             try:
                 probe.connect(str(self.path))
             except ConnectionRefusedError:
@@ -50,6 +53,8 @@ class Approval:
         self.path.chmod(0o600)
 
     def dispatch(self, request):
+        if request == {'command': 'capabilities'}:
+            return {'documentation': self.catalog.markdown() if self.catalog else 'No capabilities observed.'}
         if request == {'command': 'sources'}:
             return {'search': copy.deepcopy(self.latest_search)}
         if request == {'command': 'pending'}:
@@ -60,6 +65,7 @@ class Approval:
         if not self.pending or request['id'] != self.pending['id'] or self.future.done():
             raise ValueError('Approval is absent, expired, or already used')
         approved = request['command'] == 'approve'
+        event("approval.decision", approved=approved)
         self.future.set_result(approved)
         self.pending = None
         return {'accepted': approved}
@@ -95,11 +101,13 @@ class Approval:
         self.request_active = True
         self.future = asyncio.get_running_loop().create_future()
         self.pending = pending
+        event('approval.pending', timeout_seconds=timeout)
         try:
             async with asyncio.timeout(timeout):
                 await notify('This change needs approval in the local approval control.')
                 return await self.future
         except asyncio.TimeoutError:
+            event("approval.expired")
             return False
         finally:
             self.request_active = False
@@ -118,7 +126,7 @@ class Approval:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('command', choices=['pending', 'sources', 'approve', 'deny'])
+    parser.add_argument('command', choices=['pending', 'sources', 'capabilities', 'approve', 'deny'])
     parser.add_argument('id', nargs='?')
     args = parser.parse_args()
     if args.command in {'approve', 'deny'} and not args.id:
@@ -139,7 +147,7 @@ def main():
             if len(chunks) > 262144:
                 raise SystemExit('Approval response too large')
     result = json.loads(chunks)
-    print(json.dumps(result, indent=2))
+    print(result['documentation'] if args.command == 'capabilities' and 'documentation' in result else json.dumps(result, indent=2))
     if 'error' in result:
         raise SystemExit(1)
 

@@ -1,13 +1,19 @@
 import asyncio
 import logging
 from .actions import validate
+from .telemetry import phase, content, new_turn, turn_id
 
 
 class Controller:
-    def __init__(self, overlay, inference, executor, apps, dbus_actions=None, agent=None):
+    def __init__(self, overlay, inference, executor, apps, dbus_actions=None, agent=None, presentation=None, conversation=None):
         self.overlay, self.inference, self.executor, self.apps = overlay, inference, executor, apps
         self.dbus_actions = dbus_actions or {}
         self.agent = agent
+        self.presentation = presentation or {}
+        self.conversation = conversation or {}
+        self.follow_up = False
+        self.follow_up_count = 0
+        self.context = []
         self.accept_events = False
         # Partial hypotheses and levels are latest-value slots, not an unbounded queue.
         self.pending = {}
@@ -34,10 +40,26 @@ class Controller:
         self.accept_events = False
         self.pending.clear()
         async with self.visual_lock:
-            await self._handle(text)
+            token = new_turn()
+            try:
+                content("transcript.final", text)
+                with phase("turn"):
+                    if self.follow_up and text.strip():
+                        self.context.append({'user': text})
+                        import json
+                        request = 'Continue this clarification conversation: ' + json.dumps(self.context)
+                    else:
+                        self.context = [{'user': text}]
+                        self.follow_up_count = 0
+                        request = text
+                    self.follow_up = False
+                    await self._handle(request if text.strip() else '')
+            finally:
+                turn_id.reset(token)
 
     async def _handle(self, text):
         if not text.strip():
+            self.context = []
             await self.overlay.reset()
             return
         self.accept_events = False
@@ -47,7 +69,9 @@ class Controller:
         try:
             await self.overlay.state("thinking")
             if self.agent:
-                reply = await self.agent.run(text)
+                with phase("agent"):
+                    async with asyncio.timeout(self.presentation.get("agentTimeoutSeconds", 60)):
+                        reply = await self.agent.run(text)
                 failed = self.agent.failed
             else:
                 actions, reply = validate(await self.inference.plan(text), self.apps, self.dbus_actions)
@@ -66,24 +90,39 @@ class Controller:
                     # Only executor results can report action success.
                     reply = " ".join(results)
             if reply:
+                content("reply.final", reply)
+                await self.overlay.message(reply)
                 await self.overlay.state("speaking")
                 try:
-                    await self.inference.speak(reply, self.overlay.level, self.overlay.message)
+                    with phase("speech"):
+                        async with asyncio.timeout(30):
+                            await self.inference.speak(reply, self.overlay.level, self.overlay.message)
                 except Exception as exc:
                     # A failed output device must not erase completed action results.
                     logging.warning("Speech output failed (%s)", type(exc).__name__)
                     await self.overlay.level(0)
                     await self.overlay.message(reply + " Speech output is unavailable.")
                     await asyncio.sleep(3)
+            if (self.agent and getattr(self.agent, "awaiting_reply", False) is True and not failed
+                    and self.conversation.get('followUpSeconds', 12) > 0
+                    and self.follow_up_count < self.conversation.get('maxFollowUps', 2)):
+                self.follow_up = True
+                self.follow_up_count += 1
+                self.context.append({'assistant': reply})
+                await self.overlay.message(reply + ' Listening for your answer…')
+                await self.overlay.state('listening')
+                return
             await self.overlay.state("error" if failed else "success")
-            await asyncio.sleep(0.6)
+            await asyncio.sleep(self.presentation.get("errorSeconds", 10) if failed else self.presentation.get("resultSeconds", 6))
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             # Never log transcripts, generated content, or raw model responses.
             logging.warning("Turn failed (%s)", type(exc).__name__)
             await self.overlay.state("error")
-            await self.overlay.message("The request could not be completed. Check the local services.")
-            await asyncio.sleep(2)
+            await self.overlay.message("The request could not be completed. Run aurora-report for details.")
+            await asyncio.sleep(self.presentation.get("errorSeconds", 10))
         finally:
-            await self.overlay.reset()
+            if not self.follow_up:
+                self.context = []
+                await self.overlay.reset()

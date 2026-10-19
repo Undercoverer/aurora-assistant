@@ -83,11 +83,13 @@ class DesktopService(ServiceInterface):
     async def Prepare(self, name: 's', argument_json: 's') -> 's':
         """Validate one desktop action and store its exact plan for 120 seconds."""
         try:
-            if len(argument_json) > 4096 or name not in {'volume', 'mute', 'microphone_mute', 'media', 'theme', 'color_scheme', 'open_app', 'launch_app'}:
+            if len(argument_json) > 4096 or name not in {'volume', 'mute', 'microphone_mute', 'media', 'theme', 'color_scheme', 'open_app', 'launch_app', 'open_url'}:
                 raise ValueError('Unsupported desktop action')
             actions, _ = validate({'actions': [{'name': name, 'argument': json.loads(argument_json)}], 'reply': ''}, self.config['apps'], settings=True)
             action = actions[0]
-            if name in {'launch_app', 'open_app'}:
+            if name == 'open_url':
+                plan = {'action': {'name': name, 'argument': action.argument}, 'requires_approval': False}
+            elif name in {'launch_app', 'open_app'}:
                 desktop_id = action.argument if name == 'launch_app' else self.config['apps'][action.argument]
                 if desktop_id not in applications():
                     raise ValueError('Application is not installed or visible')
@@ -113,6 +115,9 @@ class DesktopService(ServiceInterface):
             expires, plan = self.pending.pop(token)
             if time.monotonic() >= expires:
                 raise ValueError('Desktop plan expired')
+            if plan['action']['name'] == 'open_url':
+                from .portal import open_url
+                return await open_url(plan['action']['argument'])
             if plan.get('native_media'):
                 return await self.media.execute(plan)
             if plan['action']['name'] == 'launch_app':
@@ -183,4 +188,7 @@ def main():
     parser = argparse.ArgumentParser(description='Aurora desktop D-Bus adapter')
     parser.add_argument('--config', required=True)
     args = parser.parse_args()
-    asyncio.run(serve(load(args.config)))
+    from .telemetry import configure
+    config = load(args.config)
+    configure(config)
+    asyncio.run(serve(config))

@@ -1,6 +1,7 @@
 """Client of the supplied, unchanged VoiceOverlay1 contract."""
 import asyncio
 import logging
+from .telemetry import event
 
 BUS = "org.example.VoiceOverlay"
 PATH = "/org/example/VoiceOverlay"
@@ -25,9 +26,10 @@ class Overlay:
                 raise RuntimeError("Overlay rejected method")
         except (OSError, RuntimeError, asyncio.TimeoutError):
             # No proxy is cached: a restarted overlay can reacquire the same name.
-            logging.debug("Overlay unavailable")
+            event("overlay.unavailable", member=member)
 
     async def state(self, value):
+        event("overlay.state", state=value)
         await self.call("SetState", "s", [value])
 
     async def message(self, value):
@@ -37,6 +39,7 @@ class Overlay:
         await self.call("SetLevel", "d", [float(max(0, min(1, value)))])
 
     async def reset(self):
+        event("overlay.reset")
         await self.call("Reset")
 
     def close(self):

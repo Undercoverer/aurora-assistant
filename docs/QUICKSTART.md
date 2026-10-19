@@ -27,16 +27,16 @@ programs.aurora-assistant = {
 ```
 
 This uses the trained `hey_jarvis` wake model, base.en final recognition, tiny.en
-provisional recognition, Supertonic 3 with voice F1, and qwen3:4b for model roles.
-To use a smaller Kev router and a separate larger planner:
+provisional recognition, Supertonic 3 with voice F1, Kev-4B for decisions, and
+qwen3:4b for planning. These defaults can be written explicitly:
 
 ```nix
 programs.aurora-assistant = {
   enable = true;
   user = "alice";
-  kev.model = "qwen3:0.6b";
+  kev.model = "hf.co/ggml-org/Kev-4B-GGUF:Q4_K_M";
   ollama.model = "qwen3:4b";
-  safety.model = "qwen3:4b";
+  safety.backend = "kev";
 };
 ```
 
@@ -87,7 +87,7 @@ aurora-control approve TOKEN_SHOWN_BY_PENDING
 aurora-control deny TOKEN_SHOWN_BY_PENDING
 ```
 
-Tokens expire after two minutes. Generic D-Bus mutations require approval;
+Approval ends when its token expires or the request deadline is reached. Generic D-Bus mutations require approval;
 common built-in controls still pass through the configured model reviewer.
 There is no graphical approval dialog yet. A model's confidence never grants
 extra authority.
@@ -115,3 +115,7 @@ files remain intact after a failed staged download.
 To stop the assistant for this login session, use
 `systemctl --user stop aurora-assistant.target`. To disable it persistently, set
 `programs.aurora-assistant.enable = false` and rebuild. Model files are retained.
+
+For service failures, delays, and a single copyable diagnostic report, see
+[Troubleshooting](TROUBLESHOOTING.md). For discovered capabilities, see
+[the D-Bus catalog](CAPABILITIES.md).
