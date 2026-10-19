@@ -9,7 +9,7 @@ class Action:
     argument: str | int | bool | dict | None = None
 
 
-def schema(apps, dbus_actions=None, settings=False):
+def schema(apps, dbus_actions=None, settings=False, web_search=False):
     dbus_actions = dbus_actions or {}
     def variant(name, kind=None):
         props = {"name": {"const": name}}
@@ -23,6 +23,9 @@ def schema(apps, dbus_actions=None, settings=False):
     if settings:
         from .settings import action_schemas
         variants.extend(action_schemas())
+    if web_search:
+        variants.append(variant("web_search", {"type": "string", "minLength": 1, "maxLength": 512,
+            "description": "A public web query derived only from the original user request. Search runs alone, with no desktop mutations."}))
     if apps:
         variants.append(variant("open_app", {"enum": sorted(apps)}))
     if dbus_actions:
@@ -35,7 +38,7 @@ def schema(apps, dbus_actions=None, settings=False):
                 "reply": {"type": "string", "maxLength": 1000}}}
 
 
-def validate(plan, apps, dbus_actions=None, settings=False):
+def validate(plan, apps, dbus_actions=None, settings=False, web_search=False):
     dbus_actions = dbus_actions or {}
     if type(plan) is not dict or set(plan) != {"actions", "reply"}:
         raise ValueError("Invalid plan fields")
@@ -54,6 +57,8 @@ def validate(plan, apps, dbus_actions=None, settings=False):
                      {"play", "pause", "play-pause", "next", "previous"})
                  or (name == "open_app" and type(arg) is str and arg in apps)
                  or (name == "dbus" and type(arg) is str and arg in dbus_actions))
+        if web_search and name == "web_search":
+            valid = type(arg) is str and 0 < len(arg.strip()) <= 512
         if settings and not valid:
             from .settings import valid_action
             valid = valid_action(name, arg)

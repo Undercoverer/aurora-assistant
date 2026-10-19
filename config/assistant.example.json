@@ -54,5 +54,11 @@
   "safety": {
     "enable": true,
     "model": "qwen3:4b"
+  },
+  "webSearch": {
+    "enable": false,
+    "url": "http://127.0.0.1:8888",
+    "maxResults": 5,
+    "language": "en"
   }
 }

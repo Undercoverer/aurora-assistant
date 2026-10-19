@@ -42,3 +42,7 @@ service or delete model files.
 
 The overlay contract is unchanged. No KWin effect, new approval dialog, barge-in,
 conversation memory, or arbitrary file editor is included in this update.
+
+When webSearch.enable is true, the larger planner can return one standalone
+web_search action. Its results enter a separate tool-free summarizer and terminate
+the turn. The desktop planner never receives web evidence. See WEB_SEARCH.md.

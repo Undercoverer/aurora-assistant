@@ -21,6 +21,7 @@ def socket_path():
 class Approval:
     def __init__(self):
         self.pending = None
+        self.latest_search = None
         self.future = None
         self.server = None
         self.path = None
@@ -48,6 +49,8 @@ class Approval:
         self.path.chmod(0o600)
 
     def dispatch(self, request):
+        if request == {'command': 'sources'}:
+            return {'search': copy.deepcopy(self.latest_search)}
         if request == {'command': 'pending'}:
             return {'pending': copy.deepcopy(self.pending)}
         if (type(request) is not dict or set(request) != {'command', 'id'}
@@ -104,13 +107,13 @@ class Approval:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('command', choices=['pending', 'approve', 'deny'])
+    parser.add_argument('command', choices=['pending', 'sources', 'approve', 'deny'])
     parser.add_argument('id', nargs='?')
     args = parser.parse_args()
-    if args.command != 'pending' and not args.id:
+    if args.command in {'approve', 'deny'} and not args.id:
         parser.error('approve and deny require the exact id shown by pending')
     request = {'command': args.command}
-    if args.command != 'pending':
+    if args.command in {'approve', 'deny'}:
         request['id'] = args.id
     with socket.socket(socket.AF_UNIX) as connection:
         connection.settimeout(5)

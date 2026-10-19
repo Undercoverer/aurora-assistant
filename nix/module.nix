@@ -15,6 +15,7 @@ let
     "--config" modelSpec "--root" cfg.modelDirectory "--check" ];
   packages = self.packages.${pkgs.stdenv.hostPlatform.system};
   runtimeConfig = pkgs.writeText "aurora-assistant.json" (builtins.toJSON {
+    webSearch = { inherit (cfg.webSearch) enable url maxResults language; };
     apps = cfg.applications;
     dbus_actions = cfg.dbusActions;
     settings = { enable = true; sessionPrefixes = cfg.settings.sessionPrefixes;
@@ -103,6 +104,39 @@ in {
       revisions = lib.mkOption { type = types.attrsOf types.str; default = {};
         description = "Optional Hugging Face revisions keyed by stt, realtimeStt, or tts."; };
     };
+    webSearch = {
+      enable = lib.mkOption {
+        type = types.bool; default = false;
+        description = "Allow public web searches through a local SearXNG API. Queries leave the machine for external search engines; model inference stays local. Results are summarized in a tool-free context.";
+      };
+      manageService = lib.mkOption {
+        type = types.bool; default = true;
+        description = "When web search is enabled, configure a loopback-only SearXNG service with JSON output and disabled HTTP access logging. Disable to use an existing local API.";
+      };
+      port = lib.mkOption {
+        type = types.port; default = 8888;
+        description = "Loopback port used by the managed SearXNG API. Must be free on the host.";
+      };
+      url = lib.mkOption {
+        type = types.str; default = "http://127.0.0.1:${toString cfg.webSearch.port}";
+        defaultText = lib.literalExpression ''"http://127.0.0.1:<webSearch.port>"'';
+        example = "http://127.0.0.1:8080";
+        description = "Base URL of the local SearXNG API, without /search. Only HTTP literal loopback addresses are accepted at runtime. A custom URL requires manageService=false.";
+      };
+      maxResults = lib.mkOption {
+        type = types.ints.between 1 8; default = 5;
+        description = "Maximum usable search snippets sent to the local summarizer. Full result pages are not downloaded.";
+      };
+      language = lib.mkOption {
+        type = types.str; default = "en";
+        description = "Language sent to SearXNG for web searches. Independent of speech recognition language.";
+      };
+      engines = lib.mkOption {
+        type = types.listOf types.str; default = [ "duckduckgo" ];
+        example = [ "duckduckgo" "brave" ];
+        description = "SearXNG engine names retained in the managed service. These providers receive queries and see the host's outbound IP. Provider availability and rate limits vary.";
+      };
+    };
     kev.enable = lib.mkOption {
       type = types.bool; default = true;
       description = "Try Kev first for common requests. Uncertain, invalid, or timed-out routes go to ollama.model before any action runs.";
@@ -184,7 +218,13 @@ in {
   };
   config = lib.mkIf cfg.enable {
     assertions = [{ assertion = lib.hasPrefix "/" cfg.modelDirectory;
-      message = "programs.aurora-assistant.modelDirectory must be absolute."; }];
+      message = "programs.aurora-assistant.modelDirectory must be absolute."; }
+      { assertion = !(cfg.webSearch.enable && cfg.webSearch.manageService) ||
+          cfg.webSearch.url == "http://127.0.0.1:${toString cfg.webSearch.port}";
+        message = "A custom Aurora search URL requires webSearch.manageService=false."; }
+      { assertion = !(cfg.webSearch.enable && cfg.webSearch.manageService) || cfg.webSearch.engines != [];
+        message = "Aurora managed search requires at least one search engine."; }
+    ];
     environment.systemPackages = [ cfg.package cfg.overlayPackage ];
     environment.etc."aurora-assistant/models.json".source = modelSpec;
     systemd.tmpfiles.rules = lib.mkIf cfg.models.enable [
@@ -214,6 +254,52 @@ in {
         ExecStart = lib.escapeShellArgs [ "${cfg.package}/bin/aurora-models"
           "--config" modelSpec "--root" cfg.modelDirectory ];
       };
+    };
+    services.searx = lib.mkIf (cfg.webSearch.enable && cfg.webSearch.manageService) {
+      enable = true;
+      package = pkgs.searxng;
+      configureUwsgi = true;
+      configureNginx = false;
+      openFirewall = false;
+      environmentFile = "/var/lib/aurora-search/environment";
+      uwsgiConfig = {
+        http = "127.0.0.1:${toString cfg.webSearch.port}";
+        disable-logging = true;
+      };
+      settings = {
+        use_default_settings.engines.keep_only = cfg.webSearch.engines;
+        general.debug = false;
+        server = {
+          bind_address = "127.0.0.1";
+          port = cfg.webSearch.port;
+          secret_key = "$SEARX_SECRET_KEY";
+          limiter = false;
+          public_instance = false;
+        };
+        search.formats = [ "html" "json" ];
+      };
+    };
+    systemd.services.aurora-search-secret = lib.mkIf (cfg.webSearch.enable && cfg.webSearch.manageService) {
+      description = "Generate a local SearXNG signing key outside the Nix store";
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        StateDirectory = "aurora-search";
+        StateDirectoryMode = "0700";
+        UMask = "0077";
+      };
+      script = ''
+        if [ ! -s /var/lib/aurora-search/environment ]; then
+          ${pkgs.openssl}/bin/openssl rand -hex 32 > /var/lib/aurora-search/key.tmp
+          ${pkgs.gnused}/bin/sed 's/^/SEARX_SECRET_KEY=/' /var/lib/aurora-search/key.tmp > /var/lib/aurora-search/environment.tmp
+          mv /var/lib/aurora-search/environment.tmp /var/lib/aurora-search/environment
+          rm /var/lib/aurora-search/key.tmp
+        fi
+      '';
+    };
+    systemd.services.searx-init = lib.mkIf (cfg.webSearch.enable && cfg.webSearch.manageService) {
+      requires = [ "aurora-search-secret.service" ];
+      after = [ "aurora-search-secret.service" ];
     };
     services.ollama = lib.mkIf cfg.ollama.enable { enable = true; host = "127.0.0.1"; };
     systemd.services.ollama.environment = lib.mkIf cfg.ollama.enable { OLLAMA_NO_CLOUD = "1"; };

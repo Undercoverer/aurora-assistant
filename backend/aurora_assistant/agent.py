@@ -21,7 +21,23 @@ class SettingsAgent:
         for _ in range(self.config.get('settings', {}).get('maxRounds', 5)):
             plan = quick if quick is not None else await self.inference.plan(text, evidence=evidence)
             quick = None
-            actions, reply = validate(plan, self.config['apps'], self.config.get('dbus_actions', {}), settings=True)
+            actions, reply = validate(plan, self.config['apps'], self.config.get('dbus_actions', {}), settings=True, web_search=self.config.get("webSearch", {}).get("enable", False))
+            if any(a.name == 'web_search' for a in actions):
+                # Never give retrieved web text to the desktop planner or executor.
+                if len(actions) != 1 or evidence:
+                    return 'Please ask the web question separately from desktop actions.'
+                from .web_search import WebSearch
+                self.approval.latest_search = None
+                try:
+                    result = await WebSearch(self.config.get('webSearch', {})).search(actions[0].argument)
+                    if not result['results']:
+                        return 'The web search returned no usable snippets. No summary was generated.'
+                    answer = await self.inference.summarize_search(text, result)
+                    self.approval.latest_search = {**answer, 'retrievedAt': result['retrievedAt'], 'basis': result['basis']}
+                    return answer['summary'] + ' This answer uses search snippets. Source links are available through aurora-control sources.'
+                except Exception:
+                    self.failed = True
+                    return 'Web search or its local summary failed. No web answer was generated. Check the local search service and internet connection.'
             if not actions:
                 return reply
             reads = [a for a in actions if a.name in READ_ACTIONS]

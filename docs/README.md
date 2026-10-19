@@ -4,6 +4,7 @@ Start with [QUICKSTART.md](QUICKSTART.md). It covers prerequisites, installation
 first use, updates, and common failures. [Examples](../examples/README.md) contain
 regular-flake and flake-parts/import-tree file layouts.
 
+- [WEB_SEARCH.md](WEB_SEARCH.md): opt-in local SearXNG API, summaries, sources, and network boundaries.
 - [SETUP.md](SETUP.md): model names, custom wake words, offline operation, and approvals.
 - [DBUS.md](DBUS.md): direct calls, adapter boundaries, qdbus examples, and action coverage.
 - [ARCHITECTURE.md](ARCHITECTURE.md): Kev routing, planner discovery, review, and services.
