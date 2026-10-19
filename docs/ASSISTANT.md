@@ -1,3 +1,5 @@
+> This is the original integration-build design record. Current model provisioning and settings control are documented in [SETUP.md](SETUP.md).
+
 # Aurora local assistant: integration build 0.1
 
 This extends the supplied Palette Studio overlay with a Python voice backend,

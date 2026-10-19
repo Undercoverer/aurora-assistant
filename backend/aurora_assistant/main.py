@@ -8,6 +8,9 @@ from .config import load, offline_environment
 from .controller import Controller
 from .inference import Inference
 from .overlay import Overlay
+from .approval import Approval
+from .settings import BusAccess, DesktopSettings
+from .agent import SettingsAgent
 
 
 async def run(config, text=None):
@@ -17,9 +20,15 @@ async def run(config, text=None):
     registry = config.get("dbus_actions", {})
     executor = Executor(config["apps"], config["commands"], dbus_actions=DBusActions(registry))
     controller = Controller(overlay, inference, executor, config["apps"], registry)
+    approval = Approval()
+    if config.get("settings", {}).get("enable", False):
+        controller.agent = SettingsAgent(config, inference,
+            DesktopSettings(config["commands"], BusAccess(config["settings"]), executor), approval, overlay)
     voice = None
     visuals = asyncio.create_task(controller.visuals())
     try:
+        if controller.agent:
+            await approval.start()
         await inference.wait_ready()
         if text is not None:
             await controller.handle(text)
@@ -67,6 +76,7 @@ async def run(config, text=None):
         visuals.cancel()
         await asyncio.gather(visuals, return_exceptions=True)
         await overlay.reset()
+        await approval.close()
         await inference.close()
         overlay.close()
 

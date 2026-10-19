@@ -4,9 +4,10 @@ from .actions import validate
 
 
 class Controller:
-    def __init__(self, overlay, inference, executor, apps, dbus_actions=None):
+    def __init__(self, overlay, inference, executor, apps, dbus_actions=None, agent=None):
         self.overlay, self.inference, self.executor, self.apps = overlay, inference, executor, apps
         self.dbus_actions = dbus_actions or {}
+        self.agent = agent
         self.accept_events = False
         # Partial hypotheses and levels are latest-value slots, not an unbounded queue.
         self.pending = {}
@@ -45,21 +46,25 @@ class Controller:
         await self.overlay.message(text)
         try:
             await self.overlay.state("thinking")
-            actions, reply = validate(await self.inference.plan(text), self.apps, self.dbus_actions)
-            results = []
-            failed = False
-            if actions:
-                await self.overlay.state("executing")
-                for action in actions:
-                    try:
-                        results.append(await self.executor.execute(action))
-                    except Exception:
-                        failed = True
-                        results.append("The next action failed. Remaining actions were not run.")
-                        await self.overlay.state("error")
-                        break
-                # Only executor results can report action success.
-                reply = " ".join(results)
+            if self.agent:
+                reply = await self.agent.run(text)
+                failed = self.agent.failed
+            else:
+                actions, reply = validate(await self.inference.plan(text), self.apps, self.dbus_actions)
+                results = []
+                failed = False
+                if actions:
+                    await self.overlay.state("executing")
+                    for action in actions:
+                        try:
+                            results.append(await self.executor.execute(action))
+                        except Exception:
+                            failed = True
+                            results.append("The next action failed. Remaining actions were not run.")
+                            await self.overlay.state("error")
+                            break
+                    # Only executor results can report action success.
+                    reply = " ".join(results)
             if reply:
                 await self.overlay.message(reply)
                 await self.overlay.state("speaking")

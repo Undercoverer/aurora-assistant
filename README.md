@@ -1,3 +1,5 @@
+> Current named-model provisioning and settings-agent guide: [docs/SETUP.md](docs/SETUP.md).
+
 > Configuration, wake models, application aliases, D-Bus capabilities and GitHub updates:
 > [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 

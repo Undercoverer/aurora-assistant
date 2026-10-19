@@ -65,7 +65,7 @@
           paths = [ env ];
           nativeBuildInputs = [ pkgs.makeWrapper ];
           postBuild = ''
-            for executable in aurora-assistant aurora-tts; do
+            for executable in aurora-assistant aurora-tts aurora-models aurora-control; do
               wrapProgram "$out/bin/$executable" \
                 --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath [ pkgs.portaudio pkgs.libsndfile pkgs.stdenv.cc.cc.lib ]}" \
                 --set HF_HUB_OFFLINE 1 --set HF_HUB_DISABLE_TELEMETRY 1 --set TORIO_USE_FFMPEG 0

@@ -11,6 +11,8 @@ voice = ["RealtimeSTT[faster-whisper,silero-onnx-cpu,openwakeword]==1.1.2", "sup
 [project.scripts]
 aurora-assistant = "aurora_assistant.main:main"
 aurora-tts = "aurora_assistant.tts_server:main"
+aurora-models = "aurora_assistant.models:main"
+aurora-control = "aurora_assistant.approval:main"
 
 [build-system]
 requires = ["hatchling"]

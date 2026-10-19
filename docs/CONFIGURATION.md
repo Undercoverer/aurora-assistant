@@ -1,3 +1,5 @@
+> This document describes the initial fixed-action configuration. For current named-model provisioning, generic D-Bus discovery and approvals, use [SETUP.md](SETUP.md).
+
 # Configuration and GitHub updates
 
 ## Use the repository as your flake input
