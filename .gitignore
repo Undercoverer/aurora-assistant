@@ -1,0 +1,9 @@
+/build/
+/build-*/
+*.user
+__pycache__/
+
+.venv/
+*.pyc
+result
+result-*
