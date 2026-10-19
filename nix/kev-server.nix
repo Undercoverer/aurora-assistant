@@ -3,6 +3,7 @@ stdenv.mkDerivation {
   pname = "aurora-kev-server";
   version = "0.6.0";
   src = fetchurl {
+    name = "llama.cpp-0.6.0.tar.gz";
     url = "https://codeload.github.com/ggml-org/llama.cpp/tar.gz/refs/tags/v0.6.0";
     hash = "sha256-CbNtuiNfysGA7/8YUU2nA45l2OW55K76WSOEaKv97BI=";
   };
