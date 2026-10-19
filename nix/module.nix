@@ -20,7 +20,7 @@ let
     dbus_actions = cfg.dbusActions;
     settings = { enable = true; sessionPrefixes = cfg.settings.sessionPrefixes;
       systemPrefixes = cfg.settings.systemPrefixes; maxRounds = cfg.settings.maxRounds; };
-    kev = { enable = cfg.kev.enable; model = cfg.kev.model; };
+    kev = { inherit (cfg.kev) enable model maxRounds announceEscalation escalationMessage; };
     safety = { enable = cfg.safety.enable; model = cfg.safety.model; };
     commands = {
       wpctl = "${pkgs.wireplumber}/bin/wpctl";
@@ -32,7 +32,7 @@ let
     };
     llm = { url = "http://127.0.0.1:11434/v1"; model = cfg.ollama.model; };
     tts = { url = "http://127.0.0.1:${toString cfg.ttsPort}/v1";
-      model = cfg.models.tts; voice = cfg.voice; };
+      model = cfg.models.tts; voice = cfg.voice; wordSync = cfg.wordSync; };
     stt = {
       model = cfg.sttModel;
       realtime_model = cfg.realtimeSttModel;
@@ -141,6 +141,19 @@ in {
       type = types.bool; default = true;
       description = "Try Kev first for common requests. Uncertain, invalid, or timed-out routes go to ollama.model before any action runs.";
     };
+    kev.maxRounds = lib.mkOption {
+      type = types.ints.between 1 4; default = 2;
+      description = "Maximum Kev planning rounds before escalation. Two allows a common desktop lookup followed by an action. These rounds count toward settings.maxRounds.";
+    };
+    kev.announceEscalation = lib.mkOption {
+      type = types.bool; default = true;
+      description = "Speak a short notice once when Kev escalates. Planning runs concurrently; notices are skipped if the result is ready within 350 milliseconds. TTS failure does not fail the request.";
+    };
+    kev.escalationMessage = lib.mkOption {
+      type = types.strMatching ".{1,160}"; default = "Checking that in more detail.";
+      example = "This needs a closer look. One moment.";
+      description = "Short local TTS message for escalation. It must not claim that an action has completed. Notices are limited to eight seconds and finish before execution or the final reply.";
+    };
     kev.model = lib.mkOption {
       type = types.str; default = cfg.ollama.model;
       defaultText = lib.literalExpression "config.programs.aurora-assistant.ollama.model";
@@ -209,6 +222,10 @@ in {
       description = "SoundDevice input index or device-name substring. Null uses the default input. Select a microphone rather than a monitor source."; type = types.nullOr (types.either types.int types.str); default = null; };
     voice = lib.mkOption {
       description = "Supertonic voice style, F1 through F5 or M1 through M5. Provisioning checks that the style exists in the selected model."; type = types.enum [ "M1" "M2" "M3" "M4" "M5" "F1" "F2" "F3" "F4" "F5" ]; default = "F1"; };
+    wordSync = lib.mkOption {
+      type = types.bool; default = true;
+      description = "Align reply words locally against generated audio and reveal text using the playback device clock. Reuses realtimeSttModel in the TTS service, adding memory and preparation latency. Alignment failures use chunk captions, not fabricated word timestamps.";
+    };
     ttsPort = lib.mkOption {
       description = "Loopback TCP port for the local OpenAI-compatible speech endpoint. Must be free on the host."; type = types.port; default = 7788; };
     ollama.enable = lib.mkOption { type = types.bool; default = true;
@@ -321,8 +338,8 @@ in {
       description = "Local Supertonic speech API";
       serviceConfig.ExecStartPre = lib.optional cfg.models.enable modelCheck;
       environment = offline;
-      serviceConfig.ExecStart = lib.escapeShellArgs [ "${cfg.package}/bin/aurora-tts"
-        "--model-dir" "${assetRoot}/supertonic" "--model" cfg.models.tts "--port" (toString cfg.ttsPort) ];
+      serviceConfig.ExecStart = lib.escapeShellArgs ([ "${cfg.package}/bin/aurora-tts"
+        "--model-dir" "${assetRoot}/supertonic" "--model" cfg.models.tts "--port" (toString cfg.ttsPort) ] ++ lib.optionals cfg.wordSync [ "--alignment-model" cfg.realtimeSttModel ]);
     };
     systemd.user.services.aurora-desktop = lib.recursiveUpdate common {
       description = "Aurora desktop D-Bus adapter";

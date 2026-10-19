@@ -15,7 +15,8 @@
   "tts": {
     "url": "http://127.0.0.1:7788/v1",
     "model": "supertonic-3",
-    "voice": "F1"
+    "voice": "F1",
+    "wordSync": true
   },
   "stt": {
     "model": "/var/lib/aurora-models/current/whisper",
@@ -49,7 +50,10 @@
   },
   "kev": {
     "enable": true,
-    "model": "qwen3:0.6b"
+    "model": "qwen3:0.6b",
+    "maxRounds": 2,
+    "announceEscalation": true,
+    "escalationMessage": "Checking that in more detail."
   },
   "safety": {
     "enable": true,

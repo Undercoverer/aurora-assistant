@@ -2,9 +2,9 @@
 
 1. openWakeWord activates the microphone turn. Silero detects speech boundaries.
    RealtimeSTT/faster-whisper supplies provisional replacements and final text.
-2. Kev gets one attempt to fill common typed actions. Explicit absolute volume,
-   mute, and playback requests can take this path. Unknown identifiers, relative
-   adjustments, or uncertain intent go to the larger `ollama.model` planner.
+2. Kev gets up to two rounds by default to fill common typed actions. Explicit absolute volume,
+   mute, and playback requests can take this path. Common app/theme/audio lookups can stay with Kev for a second round.
+   Unresolved identifiers or uncertain intent go to the larger `ollama.model` planner.
    Routing has a 15-second HTTP timeout, not a guaranteed response-time target.
 3. The larger planner can discover services, objects, properties, themes, and apps
    over bounded rounds. Read results are untrusted data. A discovery round never
@@ -46,3 +46,7 @@ conversation memory, or arbitrary file editor is included in this update.
 When webSearch.enable is true, the larger planner can return one standalone
 web_search action. Its results enter a separate tool-free summarizer and terminate
 the turn. The desktop planner never receives web evidence. See WEB_SEARCH.md.
+
+Escalation can speak a short notice while the larger planner is already running.
+Reply captions use locally aligned word timings and the playback device clock.
+See [SPEECH_FEEDBACK.md](SPEECH_FEEDBACK.md) for configuration and timing limits.

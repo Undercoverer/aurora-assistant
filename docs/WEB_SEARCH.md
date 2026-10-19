@@ -26,8 +26,8 @@ Examples:
 - "Search for the opening hours of the public library in [your town]."
 
 Say the location or other necessary context; the assistant does not infer your
-location. Search is available to the larger planner when enabled. Kev escalates
-information requests. The planner forms one query from the original request,
+location. When enabled, Kev can route an explicit web query directly to search.
+Uncertain information requests still go to the larger planner. The planner forms one query from the original request,
 then the controller retrieves at most eight results (five by default) and asks
 the local model for a short summary with numbered citations.
 

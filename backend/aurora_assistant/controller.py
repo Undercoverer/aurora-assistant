@@ -66,9 +66,8 @@ class Controller:
                     # Only executor results can report action success.
                     reply = " ".join(results)
             if reply:
-                await self.overlay.message(reply)
                 await self.overlay.state("speaking")
-                await self.inference.speak(reply, self.overlay.level)
+                await self.inference.speak(reply, self.overlay.level, self.overlay.message)
             await self.overlay.state("error" if failed else "success")
             await asyncio.sleep(0.6)
         except asyncio.CancelledError:

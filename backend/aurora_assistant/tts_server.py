@@ -6,16 +6,20 @@ from contextlib import asynccontextmanager
 from .config import offline_environment
 
 
-def make_app(model_dir, model_name):
+def make_app(model_dir, model_name, alignment_model=None):
     from fastapi import FastAPI, HTTPException, Request, Response
     import soundfile as sf
     from supertonic import TTS
     engine = None
+    aligner = None
     lock = asyncio.Lock()
     @asynccontextmanager
     async def lifespan(app):
-        nonlocal engine
+        nonlocal engine, aligner
         engine = await asyncio.to_thread(TTS, model=model_name, model_dir=model_dir, auto_download=False)
+        if alignment_model:
+            from faster_whisper import WhisperModel
+            aligner = await asyncio.to_thread(WhisperModel, alignment_model, device="cpu", compute_type="int8", local_files_only=True)
         yield
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None)
 
@@ -24,6 +28,7 @@ def make_app(model_dir, model_name):
         return {"ready": engine is not None}
 
     @app.post("/v1/audio/speech")
+    @app.post("/v1/audio/speech/timed")
     async def speech(request: Request):
         chunks = bytearray()
         async for chunk in request.stream():
@@ -43,14 +48,51 @@ def make_app(model_dir, model_name):
             raise HTTPException(400, "Invalid speech request") from None
         if lock.locked():
             raise HTTPException(429, "Speech engine busy")
+        timed = request.url.path.endswith('/timed')
         def synthesize():
             style = engine.get_voice_style(voice_name=voice)
-            wave, _ = engine.synthesize(text=text, voice_style=style, lang="en")
+            import numpy as np
+            from .speech_timing import text_chunks, align_words
+            chunks_to_say = list(text_chunks(text)) if timed else [(0, text)]
+            waves, marks, modes = [], [], []
+            offset = 0.
+            for char_offset, chunk in chunks_to_say:
+                wave, _ = engine.synthesize(text=chunk, voice_style=style, lang="en")
+                wave = wave.reshape(-1)
+                duration = len(wave) / engine.sample_rate
+                if offset + duration > 120:
+                    raise ValueError("Synthesized response is too long")
+                if timed:
+                    buffer = io.BytesIO()
+                    sf.write(buffer, wave, engine.sample_rate, format="WAV", subtype="PCM_16")
+                    try:
+                        if aligner is None:
+                            raise ValueError("Alignment is disabled")
+                        chunk_marks = align_words(aligner, buffer.getvalue(), chunk)
+                        modes.append('aligned')
+                    except Exception:
+                        # Do not invent evenly spaced word timestamps.
+                        chunk_marks = [{'start': 0., 'end': duration, 'charEnd': len(chunk)}]
+                        modes.append('chunk')
+                    marks.extend({'start': m['start'] + offset, 'end': m['end'] + offset,
+                                  'charEnd': m['charEnd'] + char_offset} for m in chunk_marks)
+                waves.append(wave)
+                offset += duration
             out = io.BytesIO()
-            sf.write(out, wave.reshape(-1), engine.sample_rate, format="WAV", subtype="PCM_16")
-            return out.getvalue()
+            sf.write(out, np.concatenate(waves), engine.sample_rate, format="WAV", subtype="PCM_16")
+            return out.getvalue(), marks, modes
         async with lock:
-            audio = await asyncio.to_thread(synthesize)
+            # A cancelled HTTP request must not release the engine lock while its thread runs.
+            job = asyncio.create_task(asyncio.to_thread(synthesize))
+            try:
+                audio, marks, modes = await asyncio.shield(job)
+            except asyncio.CancelledError:
+                await job
+                raise
+        if timed:
+            import base64
+            return {"audio": base64.b64encode(audio).decode('ascii'), "format": "wav",
+                    "text": text, "words": marks, "timing": modes}
         return Response(audio, media_type="audio/wav")
     return app
 
@@ -59,11 +101,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-dir", required=True)
     parser.add_argument("--model", default="supertonic-3")
+    parser.add_argument("--alignment-model", help="Installed CTranslate2 Whisper model for local word alignment")
     parser.add_argument("--port", type=int, default=7788)
     args = parser.parse_args()
     offline_environment()
     import uvicorn
-    uvicorn.run(make_app(args.model_dir, args.model), host="127.0.0.1", port=args.port, access_log=False)
+    uvicorn.run(make_app(args.model_dir, args.model, args.alignment_model), host="127.0.0.1", port=args.port, access_log=False)
 
 
 if __name__ == "__main__":

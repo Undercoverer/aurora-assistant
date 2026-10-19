@@ -1,5 +1,6 @@
 """Bounded discovery, review, and execution loop for a single user request."""
 import json
+import asyncio
 from .actions import validate
 from .settings import READ_ACTIONS
 
@@ -12,15 +13,26 @@ class SettingsAgent:
     async def run(self, text):
         self.failed = False
         evidence = []
-        quick = None
-        if self.config.get('kev', {}).get('enable', False):
-            try:
-                quick = await self.inference.quick_plan(text)
-            except Exception:
-                pass  # Routing failure escalates, never executes a partial answer.
+        kev = self.config.get('kev', {})
+        kev_active = kev.get('enable', False)
+        kev_rounds = 0
+        announced = False
         for _ in range(self.config.get('settings', {}).get('maxRounds', 5)):
-            plan = quick if quick is not None else await self.inference.plan(text, evidence=evidence)
-            quick = None
+            plan = None
+            if kev_active and kev_rounds < kev.get('maxRounds', 2):
+                kev_rounds += 1
+                try:
+                    plan = await self.inference.quick_plan(text, evidence=evidence)
+                except Exception:
+                    pass  # Routing failure escalates without executing partial output.
+            if plan is None:
+                kev_active = False
+                if kev.get('enable', False) and kev.get('announceEscalation', True) and not announced:
+                    announced = True
+                    plan = await self.with_notice(self.inference.plan(text, evidence=evidence),
+                                                  kev.get('escalationMessage', 'Checking that in more detail.'))
+                else:
+                    plan = await self.inference.plan(text, evidence=evidence)
             actions, reply = validate(plan, self.config['apps'], self.config.get('dbus_actions', {}), settings=True, web_search=self.config.get("webSearch", {}).get("enable", False))
             if any(a.name == 'web_search' for a in actions):
                 # Never give retrieved web text to the desktop planner or executor.
@@ -57,6 +69,7 @@ class SettingsAgent:
             try:
                 prepared = [await self.desktop.prepare(action) for action in actions]
             except Exception as exc:
+                kev_active = False
                 evidence.append({'preparation_error': str(exc)[:1000], 'actions': plan['actions']})
                 continue  # No mutations have occurred; let the larger model resolve it.
             review = {'decision': 'allow', 'reason': 'Local policy permits the supported desktop actions.'}
@@ -83,3 +96,42 @@ class SettingsAgent:
                     break
             return ' '.join(results)
         return 'The discovery limit was reached. No changes were made. Please narrow the request.'
+
+    async def with_notice(self, work, message):
+        task = asyncio.create_task(work)
+        started = False
+
+        async def notice():
+            nonlocal started
+            # Avoid interrupting a result that is already ready.
+            await asyncio.sleep(0.35)
+            if task.done():
+                return
+            started = True
+            try:
+                async with asyncio.timeout(8):
+                    await self.overlay.state('speaking')
+                    await self.inference.speak(message, self.overlay.level, self.overlay.message)
+            except Exception:
+                pass  # Feedback failure must not fail the actual request.
+            finally:
+                try:
+                    await self.overlay.level(0)
+                    await self.overlay.state('thinking')
+                except Exception:
+                    pass
+
+        speech = asyncio.create_task(notice())
+        try:
+            result = await task
+            if not started and not speech.done():
+                speech.cancel()
+                await asyncio.gather(speech, return_exceptions=True)
+            else:
+                await speech  # Do not overlap speech with the final answer or actions.
+            return result
+        finally:
+            for pending in (task, speech):
+                if not pending.done():
+                    pending.cancel()
+            await asyncio.gather(task, speech, return_exceptions=True)
