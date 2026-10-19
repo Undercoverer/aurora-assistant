@@ -12,8 +12,15 @@ class SettingsAgent:
     async def run(self, text):
         self.failed = False
         evidence = []
+        quick = None
+        if self.config.get('kev', {}).get('enable', False):
+            try:
+                quick = await self.inference.quick_plan(text)
+            except Exception:
+                pass  # Routing failure escalates, never executes a partial answer.
         for _ in range(self.config.get('settings', {}).get('maxRounds', 5)):
-            plan = await self.inference.plan(text, evidence=evidence)
+            plan = quick if quick is not None else await self.inference.plan(text, evidence=evidence)
+            quick = None
             actions, reply = validate(plan, self.config['apps'], self.config.get('dbus_actions', {}), settings=True)
             if not actions:
                 return reply
@@ -31,7 +38,11 @@ class SettingsAgent:
                 continue
             # Mute the microphone last so earlier operations do not lose input.
             actions = sorted(actions, key=lambda a: a.name == 'microphone_mute' and a.argument is True)
-            prepared = [await self.desktop.prepare(action) for action in actions]
+            try:
+                prepared = [await self.desktop.prepare(action) for action in actions]
+            except Exception as exc:
+                evidence.append({'preparation_error': str(exc)[:1000], 'actions': plan['actions']})
+                continue  # No mutations have occurred; let the larger model resolve it.
             review = {'decision': 'allow', 'reason': 'Local policy permits the supported desktop actions.'}
             if self.config.get('safety', {}).get('enable', True):
                 try:

@@ -9,7 +9,8 @@ from .controller import Controller
 from .inference import Inference
 from .overlay import Overlay
 from .approval import Approval
-from .settings import BusAccess, DesktopSettings
+from .settings import BusAccess
+from .desktop_bus import RemoteDesktop
 from .agent import SettingsAgent
 
 
@@ -23,7 +24,7 @@ async def run(config, text=None):
     approval = Approval()
     if config.get("settings", {}).get("enable", False):
         controller.agent = SettingsAgent(config, inference,
-            DesktopSettings(config["commands"], BusAccess(config["settings"]), executor), approval, overlay)
+            RemoteDesktop(BusAccess(config["settings"]), executor), approval, overlay)
     voice = None
     visuals = asyncio.create_task(controller.visuals())
     try:

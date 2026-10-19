@@ -76,3 +76,34 @@ class ApprovalTests(unittest.IsolatedAsyncioTestCase):
         approval = Approval()
         self.assertFalse(await approval.request({'plan': []}, AsyncMock(), timeout=0.001))
         self.assertIsNone(approval.pending)
+
+class KevTests(unittest.IsolatedAsyncioTestCase):
+    async def test_fast_route_skips_large_planner_but_keeps_review(self):
+        inference, desktop, approval, overlay = [AsyncMock() for _ in range(4)]
+        inference.quick_plan.return_value = plan('mute', True)
+        inference.review.return_value = {'decision': 'allow', 'reason': 'Requested'}
+        desktop.prepare.return_value = {'action': {'name': 'mute', 'argument': True}, 'requires_approval': False}
+        desktop.execute.return_value = 'Muted.'
+        agent = SettingsAgent({'apps': {}, 'kev': {'enable': True}}, inference, desktop, approval, overlay)
+        self.assertEqual(await agent.run('Mute speakers'), 'Muted.')
+        inference.plan.assert_not_awaited()
+        inference.review.assert_awaited_once()
+
+    async def test_fast_failure_escalates_without_running_anything(self):
+        inference, desktop, approval, overlay = [AsyncMock() for _ in range(4)]
+        inference.quick_plan.side_effect = ValueError('Invalid route')
+        inference.plan.return_value = {'actions': [], 'reply': 'Which device?'}
+        agent = SettingsAgent({'apps': {}, 'kev': {'enable': True}}, inference, desktop, approval, overlay)
+        self.assertEqual(await agent.run('Change that'), 'Which device?')
+        inference.plan.assert_awaited_once()
+        desktop.execute.assert_not_awaited()
+
+    async def test_preparation_failure_escalates_before_execution(self):
+        inference, desktop, approval, overlay = [AsyncMock() for _ in range(4)]
+        inference.quick_plan.return_value = plan('media', 'pause')
+        desktop.prepare.side_effect = ValueError('Ambiguous player')
+        inference.plan.return_value = {'actions': [], 'reply': 'Which player?'}
+        agent = SettingsAgent({'apps': {}, 'kev': {'enable': True}}, inference, desktop, approval, overlay)
+        self.assertEqual(await agent.run('Pause'), 'Which player?')
+        self.assertIn('preparation_error', inference.plan.call_args.kwargs['evidence'][0])
+        desktop.execute.assert_not_awaited()

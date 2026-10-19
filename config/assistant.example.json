@@ -1,11 +1,12 @@
 {
-  "apps": {
-    "dolphin": "org.kde.dolphin.desktop"
-  },
+  "apps": {},
   "commands": {
     "wpctl": "wpctl",
     "playerctl": "playerctl",
-    "gtk-launch": "gtk-launch"
+    "gtk-launch": "gtk-launch",
+    "plasma-colors": "plasma-apply-colorscheme",
+    "plasma-theme": "plasma-apply-lookandfeel",
+    "kreadconfig": "kreadconfig6"
   },
   "llm": {
     "url": "http://127.0.0.1:11434/v1",
@@ -17,12 +18,12 @@
     "voice": "F1"
   },
   "stt": {
-    "model": "/var/lib/aurora-models/whisper",
-    "realtime_model": "/var/lib/aurora-models/whisper-realtime",
-    "wake_model": "/var/lib/aurora-models/wake.onnx",
-    "embedding_model": "/var/lib/aurora-models/embedding_model.onnx",
-    "melspectrogram_model": "/var/lib/aurora-models/melspectrogram.onnx",
-    "silero_model": "/var/lib/aurora-models/silero_vad.onnx",
+    "model": "/var/lib/aurora-models/current/whisper",
+    "realtime_model": "/var/lib/aurora-models/current/whisper-realtime",
+    "wake_model": "/var/lib/aurora-models/current/wake.onnx",
+    "embedding_model": "/var/lib/aurora-models/current/embedding_model.onnx",
+    "melspectrogram_model": "/var/lib/aurora-models/current/melspectrogram.onnx",
+    "silero_model": "/var/lib/aurora-models/current/silero_vad.onnx",
     "silence_seconds": 0.7,
     "wake_threshold": 0.5,
     "wake_timeout": 8,
@@ -32,5 +33,26 @@
     "language": "en",
     "input_device": null
   },
-  "dbus_actions": {}
+  "dbus_actions": {},
+  "settings": {
+    "enable": true,
+    "sessionPrefixes": [
+      "org.kde.",
+      "org.mpris.",
+      "org.aurora.Desktop",
+      "org.example.VoiceOverlay"
+    ],
+    "systemPrefixes": [
+      "org.freedesktop.UPower"
+    ],
+    "maxRounds": 5
+  },
+  "kev": {
+    "enable": true,
+    "model": "qwen3:0.6b"
+  },
+  "safety": {
+    "enable": true,
+    "model": "qwen3:4b"
+  }
 }

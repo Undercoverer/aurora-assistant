@@ -20,6 +20,8 @@ class Inference:
                 tts.raise_for_status()
                 names = {m["id"] for m in llm.json()["data"]}
                 wanted = {self.config["llm"]["model"]}
+                if self.config.get("kev", {}).get("enable", False):
+                    wanted.add(self.config["kev"]["model"])
                 if self.config.get("safety", {}).get("enable", False):
                     wanted.add(self.config["safety"]["model"])
                 wanted = {name if ':' in name.rsplit('/', 1)[-1] else name + ':latest' for name in wanted}
@@ -39,7 +41,7 @@ class Inference:
         system = (
             "You are a local desktop assistant. Select only actions explicitly requested by the user. "
             "If ambiguous, return no actions and ask a short clarification. Never claim success before execution. "
-            "Use desktop_read to discover installed themes/colors/audio/media. Use dbus_list and dbus_inspect "
+            "Use desktop_read to discover installed themes/colors/audio/media/applications. Use launch_app with an observed desktop ID; no app alias is required. Use dbus_list and dbus_inspect "
             "to discover available settings; do not invent service names, methods, properties or theme identifiers. "
             "Use dbus_get to answer setting questions and dbus_set for writable properties. "
             "Use dbus_call only when a method is required; it always needs human approval. "
@@ -59,6 +61,38 @@ class Inference:
                 "name": "desktop_plan", "strict": True, "schema": schema(self.config["apps"], self.config.get("dbus_actions", {}), settings=self.config.get("settings", {}).get("enable", False))}}})
         response.raise_for_status()
         return json.loads(response.json()["choices"][0]["message"]["content"])
+
+    async def quick_plan(self, text):
+        """Kev either fills a common typed action or explicitly escalates."""
+        shape = schema(self.config["apps"], settings=True)
+        shape["properties"]["actions"]["items"]["anyOf"] = [
+            item for item in shape["properties"]["actions"]["items"]["anyOf"]
+            if not item["properties"]["name"]["const"].startswith("dbus")]
+        shape["properties"]["escalate"] = {"type": "boolean"}
+        shape["required"].append("escalate")
+        response = await self.http.post(self.config["llm"]["url"] + "/chat/completions", timeout=15, json={
+            "model": self.config["kev"]["model"], "stream": False, "temperature": 0, "max_tokens": 768,
+            "messages": [{"role": "system", "content":
+                "You are Kev, a fast local desktop request router. Fill typed common actions only when "
+                "the request is explicit and all values are known. Volume is an absolute integer percent. "
+                "Distinguish microphone_mute from speaker mute. Use media for playback. Never invent "
+                "installed theme IDs or application IDs: these need discovery by the larger planner. "
+                "For relative values, discovery, ambiguity, unfamiliar settings, or any uncertainty, "
+                "set escalate=true and actions=[]. Do not claim that actions have run. /no_think"},
+                {"role": "user", "content": text[:8192]}],
+            "response_format": {"type": "json_schema", "json_schema": {
+                "name": "kev_route", "strict": True, "schema": shape}}})
+        response.raise_for_status()
+        result = json.loads(response.json()["choices"][0]["message"]["content"])
+        if type(result) is not dict or set(result) != {"actions", "reply", "escalate"} or type(result["escalate"]) is not bool:
+            raise ValueError("Invalid Kev route")
+        if result.pop("escalate") or not result["actions"]:
+            return None
+        from .actions import validate
+        actions, _ = validate(result, self.config["apps"], settings=True)
+        if any(a.name.startswith("dbus") for a in actions):
+            raise ValueError("Kev must escalate unfamiliar interfaces")
+        return result
 
     async def review(self, text, prepared):
         c = self.config["llm"]

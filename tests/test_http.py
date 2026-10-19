@@ -37,3 +37,26 @@ class LocalHTTPTests(unittest.IsolatedAsyncioTestCase):
                 await client.wait_ready()
         finally:
             await client.close()
+
+    async def test_kev_route_uses_separate_model_and_rejects_bad_arguments(self):
+        import json
+        config = {'apps': {}, 'llm': {'url': 'http://127.0.0.1:11434/v1', 'model': 'large'},
+                  'kev': {'enable': True, 'model': 'small'}}
+        client = Inference(config)
+        await client.http.aclose()
+        answers = [
+            {'actions': [{'name': 'volume', 'argument': 200}], 'reply': '', 'escalate': False},
+            {'actions': [], 'reply': '', 'escalate': True},
+            {'actions': [{'name': 'mute', 'argument': True}], 'reply': '', 'escalate': False}]
+        def respond(request):
+            data = json.loads(request.content)
+            self.assertEqual(data['model'], 'small')
+            return httpx.Response(200, json={'choices': [{'message': {'content': json.dumps(answers.pop(0))}}]})
+        client.http = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+        try:
+            with self.assertRaises(ValueError):
+                await client.quick_plan('volume')
+            self.assertIsNone(await client.quick_plan('unknown'))
+            self.assertEqual((await client.quick_plan('mute'))['actions'][0]['argument'], True)
+        finally:
+            await client.close()

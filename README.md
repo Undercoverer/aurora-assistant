@@ -1,3 +1,5 @@
+> Start here: [installation guide](docs/QUICKSTART.md), [complete Nix examples](examples/README.md), [D-Bus coverage](docs/DBUS.md), and [generated option documentation](docs/DEVELOPMENT.md). These guides supersede the older backend notes below.
+
 > Current named-model provisioning and settings-agent guide: [docs/SETUP.md](docs/SETUP.md).
 
 > Configuration, wake models, application aliases, D-Bus capabilities and GitHub updates:

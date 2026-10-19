@@ -20,24 +20,40 @@ def action_schemas():
     args = {
         'microphone_mute': {'type': 'boolean'},
         'theme': text,
+        'launch_app': text,
         'color_scheme': text,
-        'desktop_read': {'enum': ['audio', 'media', 'themes', 'colors']},
+        'desktop_read': {'enum': ['audio', 'media', 'themes', 'colors', 'applications']},
         'dbus_list': {'enum': ['session', 'system']},
         'dbus_inspect': object_schema({k: v for k, v in endpoint.items() if k != 'interface'}),
         'dbus_get': object_schema({**endpoint, 'property': text}),
         'dbus_set': object_schema({**endpoint, 'property': text, 'valueJson': {'type': 'string', 'maxLength': 4096}}),
         'dbus_call': object_schema({**endpoint, 'method': text, 'argumentsJson': {'type': 'string', 'maxLength': 4096}}),
     }
-    return [object_schema({'name': {'const': name}, 'argument': arg}) for name, arg in args.items()]
+    descriptions = {
+        'microphone_mute': 'Set default microphone mute to the requested boolean; true prevents further speech input.',
+        'theme': 'Apply an installed Plasma global theme ID obtained from desktop_read themes.',
+        'color_scheme': 'Apply an installed color scheme ID obtained from desktop_read colors.',
+        'launch_app': 'Open a visible installed desktop ID obtained from desktop_read applications.',
+        'desktop_read': 'Read installed apps, themes, colors, default audio state, or live MPRIS players without mutation.',
+        'dbus_list': 'List currently running services in the permitted scope of the selected bus.',
+        'dbus_inspect': 'Read interfaces, signatures, properties and child paths from a live object.',
+        'dbus_get': 'Read a property on an observed interface using its live signature.',
+        'dbus_set': 'Propose a typed read/write property change. valueJson contains one JSON value. Requires local approval.',
+        'dbus_call': 'Propose a live method call. argumentsJson is a positional JSON array. Requires local approval.',
+    }
+    return [{**object_schema({'name': {'const': name}, 'argument': arg}), 'description': descriptions[name]}
+            for name, arg in args.items()]
 
 
 def valid_action(name, arg):
     if name == 'microphone_mute':
         return type(arg) is bool
+    if name == 'launch_app':
+        return type(arg) is str and bool(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_. -]{0,192}\.desktop', arg))
     if name in {'theme', 'color_scheme'}:
         return type(arg) is str and bool(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_. -]{0,200}', arg))
     if name == 'desktop_read':
-        return type(arg) is str and arg in {'audio', 'media', 'themes', 'colors'}
+        return type(arg) is str and arg in {'audio', 'media', 'themes', 'colors', 'applications'}
     if name == 'dbus_list':
         return type(arg) is str and arg in {'session', 'system'}
     fields = {
@@ -121,7 +137,7 @@ class BusAccess:
         from dbus_next.aio import MessageBus
         connection = None
         try:
-            async with asyncio.timeout(8):
+            async with asyncio.timeout(45 if interface == 'org.aurora.Desktop1' else 8):
                 connection = await MessageBus(bus_type=BusType.SESSION if bus == 'session' else BusType.SYSTEM).connect()
                 reply = await connection.call(Message(destination=destination, path=path, interface=interface,
                                                        member=member, signature=signature, body=body or []))

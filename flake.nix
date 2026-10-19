@@ -59,13 +59,31 @@
       nixosModules.default = import ./nix/module.nix self;
       packages = eachSystem (system: pkgs: let
         env = (pythonSet pkgs).mkVirtualEnv "aurora-python" { aurora-assistant = [ "voice" ]; };
+        optionEval = nixpkgs.lib.nixosSystem {
+          inherit system;
+          modules = [ self.nixosModules.default ];
+        };
+        optionDocs = pkgs.nixosOptionsDoc {
+          options = { programs.aurora-assistant = optionEval.options.programs.aurora-assistant; };
+          warningsAreErrors = true;
+          transformOptions = opt: opt // {
+            declarations = [ "https://github.com/Undercoverer/aurora-assistant/blob/main/nix/module.nix" ];
+          };
+        };
       in {
+        docs = pkgs.runCommand "aurora-documentation" {} ''
+          mkdir -p $out/share/doc/aurora
+          cp -r ${./docs} $out/share/doc/aurora/docs
+          cp -r ${./examples} $out/share/doc/aurora/examples
+          cp ${optionDocs.optionsCommonMark} $out/share/doc/aurora/OPTIONS.md
+          cp ${optionDocs.optionsJSON}/share/doc/nixos/options.json $out/share/doc/aurora/options.json
+        '';
         assistant = pkgs.symlinkJoin {
           name = "aurora-assistant";
           paths = [ env ];
           nativeBuildInputs = [ pkgs.makeWrapper ];
           postBuild = ''
-            for executable in aurora-assistant aurora-tts aurora-models aurora-control; do
+            for executable in aurora-assistant aurora-tts aurora-models aurora-control aurora-desktop; do
               wrapProgram "$out/bin/$executable" \
                 --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath [ pkgs.portaudio pkgs.libsndfile pkgs.stdenv.cc.cc.lib ]}" \
                 --set HF_HUB_OFFLINE 1 --set HF_HUB_DISABLE_TELEMETRY 1 --set TORIO_USE_FFMPEG 0
@@ -113,6 +131,7 @@
       });
 
       checks = eachSystem (system: pkgs: {
+        documentation = self.packages.${system}.docs;
         audioImports = pkgs.runCommand "aurora-audio-imports" {
           nativeBuildInputs = [ self.packages.${system}.assistant ];
           LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [ pkgs.portaudio pkgs.libsndfile pkgs.stdenv.cc.cc.lib ];

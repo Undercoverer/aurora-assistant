@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<node name="/org/aurora/Desktop">
+  <!-- Session bus org.aurora.Desktop. See DBUS.md for semantics and trust scope. -->
+  <interface name="org.aurora.Desktop1">
+    <!-- Read only. JSON topic data: audio/media/themes/colors/applications. -->
+    <method name="Read">
+      <arg name="topic" type="s" direction="in"/>
+      <arg name="json" type="s" direction="out"/>
+    </method>
+    <!-- Validates and stores an immutable action for 120 seconds; no mutation. -->
+    <method name="Prepare">
+      <arg name="name" type="s" direction="in"/>
+      <arg name="argument_json" type="s" direction="in"/>
+      <arg name="prepared_json" type="s" direction="out"/>
+    </method>
+    <!-- Consumes one stored token. The controller owns review/approval policy. -->
+    <method name="Apply">
+      <arg name="token" type="s" direction="in"/>
+      <arg name="result" type="s" direction="out"/>
+    </method>
+  </interface>
+</node>

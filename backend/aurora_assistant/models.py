@@ -122,6 +122,8 @@ def ensure_ollama(spec, refresh=False):
     from .config import local_url
     url = local_url(spec['ollamaUrl'])
     names = {spec['llm']}
+    if spec.get('kev'):
+        names.add(spec['kev'])
     if spec.get('reviewer'):
         names.add(spec['reviewer'])
     if any('cloud' in name.lower() for name in names):

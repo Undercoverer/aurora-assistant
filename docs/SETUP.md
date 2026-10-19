@@ -6,6 +6,7 @@ Native Nix/KDE/audio integration still needs validation on the target machine.
 
 ## Configure models by name
 
+For full file layouts, see [the integration examples](../examples/README.md).
 Keep the GitHub input and the flake-parts wrapper that imports
 `inputs.aurora.nixosModules.default`. Put these settings in the host's NixOS module:
 
@@ -22,6 +23,7 @@ programs.aurora-assistant = {
     silero = "silero-vad";
     tts = "supertonic-3";
   };
+  kev.model = "qwen3:0.6b";
   ollama.model = "qwen3:4b";
   safety = {
     enable = true;
@@ -33,10 +35,7 @@ programs.aurora-assistant = {
   maxUtteranceSeconds = 45;
   wakeThreshold = 0.5;
   voice = "F1";
-  applications = {
-    files = "org.kde.dolphin.desktop";
-    browser = "firefox.desktop";
-  };
+  # Applications are discovered automatically; aliases are optional.
 };
 ```
 
@@ -74,7 +73,7 @@ model terms for your intended use.
 
 `aurora-models.service` is a **system service** running as the configured desktop
 user. It downloads models during explicit deployment/startup provisioning. It
-pulls the planner and reviewer models through the local Ollama service, downloads
+pulls the Kev, planner, and reviewer models through the local Ollama service, downloads
 speech assets, checks required files and ONNX/TTS loading, and writes a manifest
 of resolved revisions, Ollama digests, and file hashes. It stages all speech files
 before atomically switching `modelDirectory/current` to the new generation.
@@ -144,11 +143,12 @@ The planner must choose an installed identifier. Global themes use
 `plasma-apply-lookandfeel`; color schemes use `plasma-apply-colorscheme`. Their
 stored setting is read back after application. Microphone mute uses the default
 PipeWire source; speaker mute uses the default sink. These are distinct actions.
-Microphone mute is moved to the end of a batch. Playback uses playerctl's selected
-player. If several players are active, player selection is not yet exposed as a
-separate configurable selector.
+Microphone mute is moved to the end of a batch. Playback uses direct MPRIS calls. The common action selects the sole playing
+player or sole available player; ambiguous selection requires further discovery.
+See [DBUS.md](DBUS.md) for native versus adapter paths.
 
-Application aliases retain their existing meaning: `files` maps to a configured
+Visible installed XDG applications are discovered automatically over the adapter.
+No aliases are required. Optional application aliases retain their existing meaning: `files` maps to a configured
 installed desktop-entry filename and is launched through gtk-launch. A successful
 launch request does not prove that an application finished opening.
 
@@ -174,7 +174,7 @@ Discovery is scoped in Nix:
 
 ```nix
 programs.aurora-assistant.settings = {
-  sessionPrefixes = [ "org.kde." "org.mpris." "org.example.VoiceOverlay" ];
+  sessionPrefixes = [ "org.kde." "org.mpris." "org.example.VoiceOverlay" "org.aurora.Desktop" ];
   systemPrefixes = [ "org.freedesktop.UPower" ];
   maxRounds = 5;
 };
