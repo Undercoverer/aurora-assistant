@@ -1,0 +1,36 @@
+{
+  "apps": {
+    "dolphin": "org.kde.dolphin.desktop"
+  },
+  "commands": {
+    "wpctl": "wpctl",
+    "playerctl": "playerctl",
+    "gtk-launch": "gtk-launch"
+  },
+  "llm": {
+    "url": "http://127.0.0.1:11434/v1",
+    "model": "qwen3:4b"
+  },
+  "tts": {
+    "url": "http://127.0.0.1:7788/v1",
+    "model": "supertonic-3",
+    "voice": "F1"
+  },
+  "stt": {
+    "model": "/var/lib/aurora-models/whisper",
+    "realtime_model": "/var/lib/aurora-models/whisper-realtime",
+    "wake_model": "/var/lib/aurora-models/wake.onnx",
+    "embedding_model": "/var/lib/aurora-models/embedding_model.onnx",
+    "melspectrogram_model": "/var/lib/aurora-models/melspectrogram.onnx",
+    "silero_model": "/var/lib/aurora-models/silero_vad.onnx",
+    "silence_seconds": 0.7,
+    "wake_threshold": 0.5,
+    "wake_timeout": 8,
+    "max_utterance_seconds": 45,
+    "device": "cpu",
+    "compute_type": "int8",
+    "language": "en",
+    "input_device": null
+  },
+  "dbus_actions": {}
+}

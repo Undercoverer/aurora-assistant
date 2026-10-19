@@ -1,0 +1,31 @@
+{
+  "aurora": {
+    "colors": [
+      "#ffd1aa",
+      "#ef836c",
+      "#bc4c88",
+      "#6a447f"
+    ],
+    "edgeColor": "#cc646b"
+  },
+  "orb": {
+    "colors": [
+      "#ffd2af",
+      "#c46677",
+      "#7352a8"
+    ],
+    "borderColor": "#f9d7c5",
+    "glowColor": "#aa537e",
+    "processingRingColor": "#ffd5c7",
+    "waveformColor": "#fff4ee"
+  },
+  "text": {
+    "color": "#fff3e8",
+    "statusColor": "#e6c2c6",
+    "caretColor": "#ffc2ac",
+    "contrastColor": "#1e0d17"
+  },
+  "vignette": {
+    "color": "#1a0a16"
+  }
+}

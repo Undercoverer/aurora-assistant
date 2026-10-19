@@ -1,0 +1,51 @@
+<?xml version='1.0' encoding='utf-8'?>
+<node name="/org/example/VoiceOverlay">
+  <interface name="org.example.VoiceOverlay1">
+    <method name="SetState">
+      <arg name="state" type="s" direction="in" />
+      <arg name="result" type="b" direction="out" />
+    </method>
+    <method name="SetMessage">
+      <arg name="message" type="s" direction="in" />
+    </method>
+    <method name="AppendMessage">
+      <arg name="fragment" type="s" direction="in" />
+    </method>
+    <method name="ClearMessage" />
+    <method name="SetLevel">
+      <arg name="level" type="d" direction="in" />
+    </method>
+    <method name="Reset" />
+    <method name="GetState">
+      <arg name="result" type="s" direction="out" />
+    </method>
+    <method name="Ping">
+      <arg name="result" type="s" direction="out" />
+    </method>
+    <method name="ReloadConfig">
+      <arg name="result" type="b" direction="out" />
+    </method>
+    <method name="SaveConfig">
+      <arg name="result" type="b" direction="out" />
+    </method>
+    <method name="ResetTheme">
+      <arg name="result" type="b" direction="out" />
+    </method>
+    <method name="LoadPreset">
+      <arg name="name" type="s" direction="in" />
+      <arg name="result" type="b" direction="out" />
+    </method>
+    <method name="LoadPalette">
+      <arg name="name" type="s" direction="in" />
+      <arg name="result" type="b" direction="out" />
+    </method>
+    <method name="SetOption">
+      <arg name="path" type="s" direction="in" />
+      <arg name="jsonValue" type="s" direction="in" />
+      <arg name="result" type="b" direction="out" />
+    </method>
+    <method name="GetConfigPath">
+      <arg name="result" type="s" direction="out" />
+    </method>
+  </interface>
+</node>

@@ -1,0 +1,14 @@
+[Unit]
+Description=Themeable Aurora Voice Assistant Overlay
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+# TEMPLATE: replace this with a properly Qt-wrapped Nix-built executable.
+ExecStart=%h/.local/bin/aurora-voice-overlay
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target

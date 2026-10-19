@@ -1,0 +1,12 @@
+{
+  "aurora": {
+    "colors": ["#ffa9d6", "#bb94ff", "#ffa2ad", "#f971e9"],
+    "edgeColor": "#db8fff",
+    "speed": 0.46,
+    "density": 61,
+    "sharpness": 5.2,
+    "brightness": 1.16
+  },
+  "vignette": { "color": "#17091e", "strength": 0.15 },
+  "orb": { "colors": ["#ffb4cf", "#ad88ff", "#de7bda"], "glowColor": "#b672ed" }
+}

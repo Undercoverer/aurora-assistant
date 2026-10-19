@@ -1,0 +1,13 @@
+{
+  "aurora": {
+    "colors": ["#86ffd2", "#37e5ba", "#71baff", "#d398ff"],
+    "edgeColor": "#8cffd8",
+    "speed": 0.65,
+    "density": 86,
+    "sharpness": 7.2,
+    "height": 0.47,
+    "sideHeight": 0.80,
+    "brightness": 1.25
+  },
+  "orb": { "colors": ["#91ffd7", "#51b5ff", "#ac73ee"] }
+}

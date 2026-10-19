@@ -1,0 +1,105 @@
+{
+  "animation": {
+    "caretBlinkMs": 1000,
+    "fadeMs": 150,
+    "levelSmoothMs": 90,
+    "moveMs": 0
+  },
+  "aurora": {
+    "archWidth": 0.11,
+    "baseGlow": 1.09,
+    "brightness": 1.1400000000000001,
+    "colors": [
+      "#76fffa",
+      "#4dd0ff",
+      "#477fff",
+      "#9466ff"
+    ],
+    "convexity": 2,
+    "density": 8,
+    "drift": -0.27,
+    "edgeBoost": 0.61,
+    "edgeColor": "#9466aa",
+    "edgeColorMix": 1,
+    "errorColor": "#ff557e",
+    "height": 0.19,
+    "offsetX": 0,
+    "offsetY": 0,
+    "sharpness": 1,
+    "sideHeight": 0.795,
+    "sideWidth": 0.045000000000000005,
+    "speed": 3,
+    "wave": 0.022
+  },
+  "layout": {
+    "opacity": 1,
+    "uiScale": 1
+  },
+  "orb": {
+    "anchor": "bottom",
+    "anchorMargin": 385,
+    "audioExpand": 32,
+    "borderColor": "#b3e7ff",
+    "colors": [
+      "#a2f9ff",
+      "#477fff",
+      "#6558fe"
+    ],
+    "errorColors": [
+      "#ff91ae",
+      "#e8497b",
+      "#aa315c"
+    ],
+    "gap": 3,
+    "glowColor": "#459aff",
+    "glowOpacity": 0.36,
+    "glowSize": 130,
+    "horizontalAnchor": "center",
+    "noTextLift": 0,
+    "offsetX": 0,
+    "offsetY": 390,
+    "placement": "independent",
+    "processingRingColor": "#c6e5ff",
+    "processingRingOpacity": 0.52,
+    "processingRingSize": 68,
+    "pulseDurationMs": 1500,
+    "scale": 1,
+    "screenMargin": 25,
+    "size": 100,
+    "waveformBarCount": 15,
+    "waveformColor": "#f1ffff",
+    "waveformGain": 0
+  },
+  "text": {
+    "anchor": "bottom",
+    "anchorMargin": 285,
+    "caretColor": "#abf2fc",
+    "color": "#f5fbff",
+    "contrastColor": "#080c18",
+    "contrastFeather": 2,
+    "contrastPadding": 0.09,
+    "contrastStrength": 0.3,
+    "errorColor": "#ffccdb",
+    "fontFamily": "Noto Sans",
+    "horizontalAnchor": "center",
+    "lineHeight": 0.8,
+    "maxHeight": 480,
+    "maxLines": 6,
+    "maxWidth": 810,
+    "offsetX": 0,
+    "offsetY": 90,
+    "scale": 1.09,
+    "screenMargin": 0,
+    "showStatus": true,
+    "size": 26,
+    "spacing": 7,
+    "statusColor": "#d2ecff",
+    "statusSize": 12
+  },
+  "vignette": {
+    "color": "#080c25",
+    "innerRadius": 0.2,
+    "softness": 1,
+    "strength": 0.95
+  }
+}
