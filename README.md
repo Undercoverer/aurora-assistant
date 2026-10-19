@@ -1,3 +1,5 @@
+> Latest iterative audit, fixes, and stopping criteria: [adversarial review, round three](docs/ADVERSARIAL_REVIEW_ROUND3.md).
+
 > Latest reliability fixes and fault-injection results: [adversarial review, round two](docs/ADVERSARIAL_REVIEW_ROUND2.md).
 
 > Reliability findings, fixes, tests, and remaining validation: [adversarial review](docs/ADVERSARIAL_REVIEW.md).

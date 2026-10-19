@@ -143,9 +143,10 @@
         '';
 
         backend = pkgs.runCommand "aurora-backend-tests" {
-          nativeBuildInputs = [ (pkgs.python311.withPackages (p: [ p.httpx p.dbus-next ])) pkgs.dbus ];
+          nativeBuildInputs = [ (pkgs.python311.withPackages (p: [ p.httpx p.dbus-next p.numpy p.soundfile p.fastapi ])) pkgs.dbus ];
         } ''
           export PYTHONPATH=${./backend}
+          export AURORA_TEST_CONFIG=${./config/assistant.example.json}
           dbus-run-session -- python -m unittest discover -s ${./tests} -v
           touch $out
         '';

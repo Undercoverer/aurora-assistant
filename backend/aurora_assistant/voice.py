@@ -106,7 +106,9 @@ class Voice:
         guard.start()
         try:
             text = self.recorder.text() or ""
-            return "" if timed_out.is_set() else text
+            if self.capture_error:
+                raise RuntimeError("Microphone capture failed during transcription") from self.capture_error
+            return "" if timed_out.is_set() or self.closed.is_set() else text
         finally:
             expired.set()
             guard.join(timeout=1)

@@ -215,7 +215,7 @@ in {
     silenceSeconds = lib.mkOption {
       description = "Seconds of silence that finalize recognition after speech. Increase this value to allow longer pauses."; type = types.numbers.between 0.2 5; default = 0.7; };
     wakeThreshold = lib.mkOption {
-      description = "Wake detector threshold from zero to one. Higher values reduce sensitivity; the useful threshold depends on the microphone and trained model."; type = types.numbers.between 0 1; default = 0.5; };
+      description = "Wake detector threshold from 0.01 to one; zero is rejected because it activates on zero-confidence scores. Higher values reduce sensitivity; the useful threshold depends on the microphone and trained model."; type = types.numbers.between 0.01 1; default = 0.5; };
     language = lib.mkOption {
       description = "Whisper language code for recognition. TTS currently uses English; changing this does not change synthesis language."; type = types.str; default = "en"; };
     inputDevice = lib.mkOption {
