@@ -104,6 +104,8 @@ def typed(signature, value):
             if type(v) is not list:
                 raise ValueError('Expected D-Bus array')
             if child.token == 'y':
+                if any(type(x) is not int or not 0 <= x <= 255 for x in v):
+                    raise ValueError('Expected byte integers, not booleans')
                 return bytes(v)
             return [convert(child, x) for x in v]
         if t.token == '(':
@@ -112,6 +114,8 @@ def typed(signature, value):
             return [convert(c, x) for c, x in zip(t.children, v)]
         if t.token in 'ynqiuxt' and type(v) is not int:
             raise ValueError('Expected integer, not boolean or float')
+        if t.token == 'd' and type(v) not in (int, float):
+            raise ValueError('Expected number, not boolean')
         if t.token == 'b' and type(v) is not bool:
             raise ValueError('Expected boolean')
         if t.token == 'h':
@@ -130,7 +134,8 @@ class BusAccess:
     def allowed(self, bus, destination):
         return (bus in self.prefixes and not destination.startswith(':')
                 and not any(word in destination.lower() for word in ('wallet', 'secrets', 'klauncher', 'konsole', 'krunner'))
-                and any(destination.startswith(p) for p in self.prefixes[bus]))
+                and any(p and (destination == p.rstrip('.') or destination.startswith(p.rstrip('.') + '.'))
+                        for p in self.prefixes[bus]))
 
     async def call(self, bus, destination, path, interface, member, signature='', body=None):
         from dbus_next import Message, MessageType, BusType

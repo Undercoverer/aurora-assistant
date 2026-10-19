@@ -67,7 +67,14 @@ class Controller:
                     reply = " ".join(results)
             if reply:
                 await self.overlay.state("speaking")
-                await self.inference.speak(reply, self.overlay.level, self.overlay.message)
+                try:
+                    await self.inference.speak(reply, self.overlay.level, self.overlay.message)
+                except Exception as exc:
+                    # A failed output device must not erase completed action results.
+                    logging.warning("Speech output failed (%s)", type(exc).__name__)
+                    await self.overlay.level(0)
+                    await self.overlay.message(reply + " Speech output is unavailable.")
+                    await asyncio.sleep(3)
             await self.overlay.state("error" if failed else "success")
             await asyncio.sleep(0.6)
         except asyncio.CancelledError:

@@ -51,6 +51,8 @@ def validate(plan, apps, dbus_actions=None, settings=False, web_search=False):
         if type(item) is not dict or set(item) != {"name", "argument"}:
             raise ValueError("Invalid action fields")
         name, arg = item["name"], item["argument"]
+        if type(name) is not str:
+            raise ValueError("Action name must be a string")
         valid = ((name == "volume" and type(arg) is int and 0 <= arg <= 100)
                  or (name == "mute" and type(arg) is bool)
                  or (name == "media" and type(arg) is str and arg in

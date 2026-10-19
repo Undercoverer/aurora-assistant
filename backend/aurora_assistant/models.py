@@ -4,6 +4,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import tempfile
@@ -26,10 +27,21 @@ def hashes(root):
 def check(spec, root, full=False):
     current = Path(root) / 'current'
     manifest = json.loads((current / 'manifest.json').read_text())
-    if manifest['spec_hash'] != spec_hash(spec):
+    if type(manifest) is not dict:
+        raise ValueError('Model manifest must be an object')
+    if manifest.get('spec_hash') != spec_hash(spec):
         raise ValueError('Installed models do not match the Nix configuration; check aurora-models.service')
-    for name, digest in manifest['files'].items():
+    entries = manifest.get('files')
+    if type(entries) is not dict or not entries:
+        raise ValueError('Model manifest must list installed files')
+    for name, digest in entries.items():
+        if (type(name) is not str or not name or Path(name).is_absolute()
+                or '..' in Path(name).parts or type(digest) is not str
+                or not re.fullmatch(r'[0-9a-f]{64}', digest)):
+            raise ValueError('Invalid model manifest entry')
         path = current / name
+        if not path.resolve().is_relative_to(current.resolve()):
+            raise ValueError('Model manifest file escapes its generation')
         if not path.is_file() or path.stat().st_size == 0:
             raise ValueError(f'Missing model file: {name}')
     if full and hashes(current) != manifest['files']:

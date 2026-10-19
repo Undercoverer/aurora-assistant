@@ -29,7 +29,7 @@ class Approval:
     async def start(self):
         self.path = socket_path()
         self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        if self.path.parent.stat().st_uid != os.getuid():
+        if self.path.parent.is_symlink() or self.path.parent.stat().st_uid != os.getuid():
             raise ValueError('Approval directory is not owned by the current user')
         self.path.parent.chmod(0o700)
         if self.path.exists():
@@ -54,7 +54,7 @@ class Approval:
         if request == {'command': 'pending'}:
             return {'pending': copy.deepcopy(self.pending)}
         if (type(request) is not dict or set(request) != {'command', 'id'}
-                or request['command'] not in {'approve', 'deny'}):
+                or type(request['command']) is not str or request['command'] not in {'approve', 'deny'}):
             raise ValueError('Invalid approval command')
         if not self.pending or request['id'] != self.pending['id'] or self.future.done():
             raise ValueError('Approval is absent, expired, or already used')
@@ -85,10 +85,11 @@ class Approval:
         if self.pending:
             raise RuntimeError('Another approval is pending')
         self.future = asyncio.get_running_loop().create_future()
-        self.pending = {'id': secrets.token_hex(16), **copy.deepcopy(detail)}
+        self.pending = {**copy.deepcopy(detail), 'id': secrets.token_hex(16)}
         try:
-            await notify('This change needs approval in the local approval control.')
-            return await asyncio.wait_for(self.future, timeout)
+            async with asyncio.timeout(timeout):
+                await notify('This change needs approval in the local approval control.')
+                return await self.future
         except asyncio.TimeoutError:
             return False
         finally:

@@ -6,13 +6,19 @@ from urllib.parse import urlsplit
 
 
 def local_url(value):
-    u = urlsplit(value)
+    if type(value) is not str or any(c.isspace() or ord(c) < 32 for c in value):
+        raise ValueError("Inference URL must be a valid loopback HTTP URL")
     try:
+        u = urlsplit(value)
         local = ipaddress.ip_address(u.hostname).is_loopback
-    except ValueError:
-        local = False
-    if u.scheme != "http" or not local or u.username or u.password or u.query or u.fragment:
-        raise ValueError("Inference URL must use http and a literal loopback IP")
+        port = u.port  # Validate malformed and out-of-range ports at configuration load.
+        valid = (u.scheme == "http" and local and u.username is None
+                 and u.password is None and not u.query and not u.fragment
+                 and port != 0 and not u.netloc.endswith(':'))
+    except (ValueError, TypeError):
+        valid = False
+    if not valid:
+        raise ValueError("Inference URL must use http and a literal loopback IP with a valid port")
     return value.rstrip("/")
 
 
@@ -20,7 +26,8 @@ def load(path):
     data = json.loads(Path(path).read_text())
     data["llm"]["url"] = local_url(data["llm"]["url"])
     data["tts"]["url"] = local_url(data["tts"]["url"])
-    if not 0.2 <= data["stt"]["silence_seconds"] <= 5:
+    silence = data["stt"]["silence_seconds"]
+    if type(silence) not in (int, float) or not 0.2 <= silence <= 5:
         raise ValueError("silence_seconds must be between 0.2 and 5")
     for alias, desktop in data["apps"].items():
         if not alias or not isinstance(desktop, str) or not desktop.endswith(".desktop") or "/" in desktop or desktop.startswith("-"):

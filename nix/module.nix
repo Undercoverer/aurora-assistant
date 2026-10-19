@@ -165,9 +165,9 @@ in {
     safety.model = lib.mkOption {
       description = "Local Ollama model used in a separate tool-free review context. Defaults to the planner model. Review does not replace deterministic approval rules."; type = types.str; default = cfg.ollama.model; };
     settings.sessionPrefixes = lib.mkOption {
-      description = "Allowed session-bus service prefixes for generic discovery and calls. Defaults cover KDE, MPRIS, the overlay, and the Aurora desktop adapter. Sensitive services remain excluded."; type = types.listOf types.str; default = [ "org.kde." "org.mpris." "org.example.VoiceOverlay" "org.aurora.Desktop" ]; };
+      description = "Allowed session-bus service namespaces for generic discovery and calls. Each entry matches its exact name and dot-separated descendants; empty entries match nothing. Defaults cover KDE, MPRIS, the overlay, and the Aurora desktop adapter. Sensitive services remain excluded."; type = types.listOf types.str; default = [ "org.kde." "org.mpris." "org.example.VoiceOverlay" "org.aurora.Desktop" ]; };
     settings.systemPrefixes = lib.mkOption {
-      description = "Allowed system-bus service prefixes. Normal D-Bus and Polkit rules apply. Generic changes always require local approval."; type = types.listOf types.str; default = [ "org.freedesktop.UPower" ]; };
+      description = "Allowed system-bus service namespaces, matched at dot boundaries; empty entries match nothing. Normal D-Bus and Polkit rules apply. Generic changes always require local approval."; type = types.listOf types.str; default = [ "org.freedesktop.UPower" ]; };
     settings.maxRounds = lib.mkOption {
       description = "Maximum discovery/planning rounds per request. Each round allows at most four actions. No mutations run when discovery exhausts this limit."; type = types.ints.between 1 8; default = 5; };
     wakeModel = lib.mkOption { type = types.str; default = "${assetRoot}/wake.onnx";

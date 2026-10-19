@@ -28,7 +28,7 @@ class TypeTests(unittest.TestCase):
         self.assertEqual(typed('v', {'signature': 'b', 'value': True}).value, True)
 
     def test_sensitive_services_are_not_discoverable(self):
-        bus = BusAccess({'sessionPrefixes': ['']})
+        bus = BusAccess({'sessionPrefixes': ['org.']})
         for name in ('org.freedesktop.secrets', 'org.kde.kwalletd6', 'org.kde.konsole', ':1.2'):
             self.assertFalse(bus.allowed('session', name))
         self.assertTrue(bus.allowed('session', 'org.kde.Test'))
