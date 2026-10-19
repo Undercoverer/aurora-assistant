@@ -25,6 +25,7 @@ class Approval:
         self.future = None
         self.server = None
         self.path = None
+        self.request_active = False
 
     async def start(self):
         self.path = socket_path()
@@ -65,27 +66,35 @@ class Approval:
 
     async def _client(self, reader, writer):
         try:
-            peer = writer.get_extra_info('socket')
-            _, uid, _ = struct.unpack('3i', peer.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
-            if uid != os.getuid():
-                raise PermissionError('Approval requires the same desktop account')
             async with asyncio.timeout(5):
-                data = await reader.readline()
-            result = self.dispatch(json.loads(data))
-        except Exception as exc:
-            result = {'error': str(exc)}
-        try:
-            writer.write(json.dumps(result).encode() + b'\n')
-            await writer.drain()
+                try:
+                    peer = writer.get_extra_info('socket')
+                    _, uid, _ = struct.unpack('3i', peer.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+                    if uid != os.getuid():
+                        raise PermissionError('Approval requires the same desktop account')
+                    data = await reader.readline()
+                    result = self.dispatch(json.loads(data))
+                except Exception as exc:
+                    result = {'error': str(exc)}
+                writer.write(json.dumps(result).encode() + b'\n')
+                await writer.drain()
+        except (TimeoutError, ConnectionError, OSError):
+            pass
         finally:
             writer.close()
-            await writer.wait_closed()
+            try:
+                async with asyncio.timeout(1):
+                    await writer.wait_closed()
+            except (TimeoutError, ConnectionError, OSError):
+                pass
 
     async def request(self, detail, notify, timeout=120):
-        if self.pending:
+        if self.request_active:
             raise RuntimeError('Another approval is pending')
+        pending = {**copy.deepcopy(detail), 'id': secrets.token_hex(16)}
+        self.request_active = True
         self.future = asyncio.get_running_loop().create_future()
-        self.pending = {**copy.deepcopy(detail), 'id': secrets.token_hex(16)}
+        self.pending = pending
         try:
             async with asyncio.timeout(timeout):
                 await notify('This change needs approval in the local approval control.')
@@ -93,6 +102,7 @@ class Approval:
         except asyncio.TimeoutError:
             return False
         finally:
+            self.request_active = False
             self.pending = None
             if not self.future.done():
                 self.future.cancel()

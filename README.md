@@ -1,3 +1,5 @@
+> Latest reliability fixes and fault-injection results: [adversarial review, round two](docs/ADVERSARIAL_REVIEW_ROUND2.md).
+
 > Reliability findings, fixes, tests, and remaining validation: [adversarial review](docs/ADVERSARIAL_REVIEW.md).
 
 > Start here: [installation guide](docs/QUICKSTART.md), [complete Nix examples](examples/README.md), [D-Bus coverage](docs/DBUS.md), and [generated option documentation](docs/DEVELOPMENT.md). These guides supersede the older backend notes below.

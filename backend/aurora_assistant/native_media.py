@@ -1,4 +1,5 @@
 """Direct MPRIS control, using the same interfaces available through qdbus."""
+import asyncio
 from .settings import plain
 
 PATH = '/org/mpris/MediaPlayer2'
@@ -11,15 +12,26 @@ class NativeMedia:
         self.bus = bus
 
     async def players(self):
+        async with asyncio.timeout(10):
+            return await self._players()
+
+    async def _players(self):
         names = (await self.bus.call('session', 'org.freedesktop.DBus', '/org/freedesktop/DBus', 'org.freedesktop.DBus', 'ListNames'))[0]
         result = []
-        for name in sorted(n for n in names if n.startswith('org.mpris.MediaPlayer2.'))[:32]:
+        names = sorted(n for n in names if n.startswith('org.mpris.MediaPlayer2.'))
+        if len(names) > 32:
+            raise ValueError('Too many media players to select safely')
+        for name in names:
             try:
                 owner = (await self.bus.call('session', 'org.freedesktop.DBus', '/org/freedesktop/DBus', 'org.freedesktop.DBus', 'GetNameOwner', 's', [name]))[0]
                 props = plain((await self.bus.call('session', owner, PATH, 'org.freedesktop.DBus.Properties', 'GetAll', 's', [INTERFACE]))[0])
+                if (props.get('PlaybackStatus') not in {'Playing', 'Paused', 'Stopped'}
+                        or any(type(props.get(key)) is not bool for key in
+                               ('CanControl', 'CanPlay', 'CanPause', 'CanGoNext', 'CanGoPrevious'))):
+                    raise ValueError('Invalid media player properties')
                 result.append({'destination': name, 'owner': owner, **{key: props.get(key) for key in ('PlaybackStatus', 'CanControl', 'CanPlay', 'CanPause', 'CanGoNext', 'CanGoPrevious')}})
-            except Exception:
-                continue
+            except Exception as exc:
+                raise RuntimeError('Media discovery incomplete; no player was selected') from exc
         return result
 
     async def prepare(self, action):

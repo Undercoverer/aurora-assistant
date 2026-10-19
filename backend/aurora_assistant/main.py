@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import logging
 import signal
+from contextlib import AsyncExitStack
 from .actions import Executor
 from .dbus_actions import DBusActions
 from .config import load, offline_environment
@@ -14,22 +15,33 @@ from .desktop_bus import RemoteDesktop
 from .agent import SettingsAgent
 
 
+async def stop_visuals(controller, task):
+    controller.accept_events = False
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+
+
 async def run(config, text=None):
-    overlay = Overlay()
-    await overlay.connect()
-    inference = Inference(config)
-    registry = config.get("dbus_actions", {})
-    executor = Executor(config["apps"], config["commands"], dbus_actions=DBusActions(registry))
-    controller = Controller(overlay, inference, executor, config["apps"], registry)
-    approval = Approval()
-    if config.get("settings", {}).get("enable", False):
+    # Each acquired resource is registered immediately. A failed cleanup must
+    # not prevent closing the remaining resources, including on startup failure.
+    async with AsyncExitStack() as cleanup:
+        overlay = Overlay()
+        cleanup.callback(overlay.close)
+        await overlay.connect()
+        inference = Inference(config)
+        cleanup.push_async_callback(inference.close)
+        registry = config.get("dbus_actions", {})
+        executor = Executor(config["apps"], config["commands"], dbus_actions=DBusActions(registry))
+        controller = Controller(overlay, inference, executor, config["apps"], registry)
+        approval = Approval()
+        cleanup.push_async_callback(approval.close)
+        cleanup.push_async_callback(overlay.reset)
         controller.agent = SettingsAgent(config, inference,
-            RemoteDesktop(BusAccess(config["settings"]), executor), approval, overlay)
-    voice = None
-    visuals = asyncio.create_task(controller.visuals())
-    try:
-        if controller.agent:
-            await approval.start()
+            RemoteDesktop(BusAccess(config.get("settings", {})), executor), approval, overlay)
+        voice = None
+        visuals = asyncio.create_task(controller.visuals())
+        cleanup.push_async_callback(stop_visuals, controller, visuals)
+        await approval.start()
         await inference.wait_ready()
         if text is not None:
             await controller.handle(text)
@@ -62,7 +74,9 @@ async def run(config, text=None):
         except asyncio.CancelledError:
             # Retain ownership of any recorder created during shutdown.
             voice = await initializing
+            cleanup.push_async_callback(asyncio.to_thread, voice.close)
             raise
+        cleanup.push_async_callback(asyncio.to_thread, voice.close)
         await overlay.reset()
         while True:
             controller.accept_events = True
@@ -70,16 +84,6 @@ async def run(config, text=None):
             controller.accept_events = False
             controller.pending.clear()
             await controller.handle(text)
-    finally:
-        controller.accept_events = False
-        if voice:
-            await asyncio.to_thread(voice.close)
-        visuals.cancel()
-        await asyncio.gather(visuals, return_exceptions=True)
-        await overlay.reset()
-        await approval.close()
-        await inference.close()
-        overlay.close()
 
 
 def main():

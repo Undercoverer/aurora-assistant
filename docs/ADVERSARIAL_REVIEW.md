@@ -1,5 +1,7 @@
 # Adversarial reliability review
 
+Follow-up: [round two](ADVERSARIAL_REVIEW_ROUND2.md) adds lifecycle, review-policy, discovery, and approval-expiry fixes.
+
 Review date: 2026-10-19. Scope: the Python controller, inference transport, D-Bus validation and scope, approval control, model manifests, speech output, and relevant Nix option descriptions. This is a source review with executable regression tests, not a penetration-test certification or proof that the complete desktop integration works.
 
 ## Findings and fixes

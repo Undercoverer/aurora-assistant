@@ -102,7 +102,7 @@ class DesktopService(ServiceInterface):
                 raise ValueError('Too many pending desktop actions')
             token = secrets.token_hex(16)
             self.pending[token] = (now + 120, plan)
-            return json.dumps({'token': token, 'plan': plan})
+            return json.dumps({'token': token, 'plan': plan, 'expires_at': now + 120})
         except Exception as exc:
             raise DBusError('org.aurora.Desktop.Error', str(exc)) from exc
 
@@ -152,7 +152,8 @@ class RemoteDesktop:
                     'configured_call': self.executor.dbus_actions.registry[action.argument]}
         owner = await self.owner()
         reply = json.loads((await self.bus.call('session', owner, PATH, INTERFACE, 'Prepare', 'ss', [action.name, json.dumps(action.argument)]))[0])
-        return {**reply['plan'], 'desktop_owner': owner, 'desktop_token': reply['token']}
+        return {**reply['plan'], 'desktop_owner': owner, 'desktop_token': reply['token'],
+                'expires_at': reply['expires_at']}
 
     async def execute(self, prepared):
         if prepared.get('native_media'):

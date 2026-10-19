@@ -1,6 +1,7 @@
 """Bounded discovery, review, and execution loop for a single user request."""
 import json
 import asyncio
+import time
 from .actions import validate
 from .settings import READ_ACTIONS
 
@@ -33,7 +34,7 @@ class SettingsAgent:
                                                   kev.get('escalationMessage', 'Checking that in more detail.'))
                 else:
                     plan = await self.inference.plan(text, evidence=evidence)
-            actions, reply = validate(plan, self.config['apps'], self.config.get('dbus_actions', {}), settings=True, web_search=self.config.get("webSearch", {}).get("enable", False))
+            actions, reply = validate(plan, self.config['apps'], self.config.get('dbus_actions', {}), settings=self.config.get('settings', {}).get('enable', True), web_search=self.config.get("webSearch", {}).get("enable", False))
             if any(a.name == 'web_search' for a in actions):
                 # Never give retrieved web text to the desktop planner or executor.
                 if len(actions) != 1 or evidence:
@@ -80,11 +81,22 @@ class SettingsAgent:
                     review = {'decision': 'ask', 'reason': 'The local reviewer is unavailable or returned an invalid result.'}
             if review['decision'] == 'block':
                 return 'No changes were made. ' + review['reason']
+            # Desktop tokens use this host's monotonic clock. Leave a short
+            # transport margin and never ask for approval beyond plan validity.
+            deadlines = [p['expires_at'] for p in prepared if 'expires_at' in p]
+            deadline = min(deadlines) - 2 if deadlines else float('inf')
+            if time.monotonic() >= deadline:
+                self.failed = True
+                return 'The prepared plan expired during review. No actions were run. Please ask again.'
             if review['decision'] == 'ask' or any(p['requires_approval'] for p in prepared):
                 approved = await self.approval.request(
-                    {'request': text, 'plan': prepared, 'review': review}, self.overlay.message)
+                    {'request': text, 'plan': prepared, 'review': review}, self.overlay.message,
+                    timeout=min(120, deadline - time.monotonic()))
                 if not approved:
                     return 'The change was not approved. No actions were run.'
+            if time.monotonic() >= deadline:
+                self.failed = True
+                return 'The prepared plan expired. No actions were run. Please ask again.'
             await self.overlay.state('executing')
             results = []
             for step in prepared:

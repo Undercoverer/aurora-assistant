@@ -82,7 +82,7 @@ class Inference:
 
     async def quick_plan(self, text, evidence=None):
         """Kev either fills a common typed action or explicitly escalates."""
-        shape = schema(self.config["apps"], settings=True, web_search=self.config.get("webSearch", {}).get("enable", False))
+        shape = schema(self.config["apps"], settings=self.config.get("settings", {}).get("enable", True), web_search=self.config.get("webSearch", {}).get("enable", False))
         shape["properties"]["actions"]["items"]["anyOf"] = [
             item for item in shape["properties"]["actions"]["items"]["anyOf"]
             if not item["properties"]["name"]["const"].startswith("dbus")]
@@ -111,7 +111,7 @@ class Inference:
         if result.pop("escalate") or (not result["actions"] and not evidence):
             return None
         from .actions import validate
-        actions, _ = validate(result, self.config["apps"], settings=True, web_search=self.config.get("webSearch", {}).get("enable", False))
+        actions, _ = validate(result, self.config["apps"], settings=self.config.get("settings", {}).get("enable", True), web_search=self.config.get("webSearch", {}).get("enable", False))
         if any(a.name.startswith("dbus") for a in actions):
             raise ValueError("Kev must escalate unfamiliar interfaces")
         return result
