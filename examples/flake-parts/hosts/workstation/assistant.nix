@@ -1,21 +1,10 @@
 { ... }: {
   programs.aurora-assistant = {
     enable = true;
-    user = "alice"; # Change to an existing Plasma desktop account.
-    models = {
-      stt = "base.en";
-      realtimeStt = "tiny.en";
-      wakeWord = "hey_jarvis"; # Spoken phrase comes from the trained model.
-      tts = "supertonic-3";
-    };
-    # All names are provisioned automatically. Invalid names fail setup.
-    kev.model = "hf.co/ggml-org/Kev-4B-GGUF:Q4_K_M";
-    kev.contextSize = 32768;
-    kev.cacheRamMiB = 512; # Cache repeated decision prefixes.
-    planner.model = "hf.co/Qwen/Qwen3-4B-GGUF:Q4_K_M";
-    safety.backend = "kev";
-    silenceSeconds = 0.7;
-    voice = "F1";
-    # No applications or dbusActions entries are needed.
+    user = "alice"; # Existing Plasma account.
+    wakeWord.name = "alexa"; # A trained phrase, not arbitrary text.
+    recognition.silenceSeconds = 0.7;
+    speech.voice = "F1";
+    # Kev, Qwen, Supertonic and their local services use the defaults.
   };
 }

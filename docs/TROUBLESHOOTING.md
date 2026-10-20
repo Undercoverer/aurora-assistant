@@ -1,3 +1,5 @@
+> For grouped NixOS options and migration names, see [Configuration](CONFIGURATION.md). Older option names below remain compatible.
+
 # Runtime troubleshooting
 
 ## Update an existing installation

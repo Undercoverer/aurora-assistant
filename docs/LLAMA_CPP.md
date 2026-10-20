@@ -1,3 +1,5 @@
+> For grouped NixOS options and migration names, see [Configuration](CONFIGURATION.md). Older option names below remain compatible.
+
 # One llama.cpp router for Kev and Qwen
 
 Aurora uses llama.cpp 0.7.0 or newer for both decision and language inference.

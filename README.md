@@ -1,3 +1,5 @@
+> NixOS setup and option migration: [configuration guide](docs/CONFIGURATION.md).
+
 > Inference backend: [llama.cpp migration and configuration](docs/LLAMA_CPP.md). Kev and Qwen now share one llama.cpp router service and endpoint; Ollama is no longer managed.
 
 > Decision routing, clock access, routine action policy, and Jev/Kev research: [decision workflow](docs/DECISION_WORKFLOW.md).

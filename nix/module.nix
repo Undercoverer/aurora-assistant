@@ -2,7 +2,7 @@ self: { config, lib, pkgs, ... }:
 let
   cfg = config.programs.aurora-assistant;
   types = lib.types;
-  assetRoot = if cfg.models.enable then "${cfg.modelDirectory}/current" else cfg.modelDirectory;
+  assetRoot = if cfg.models.enable then "${cfg.models.directory}/current" else cfg.models.directory;
   managedKev = cfg.kev.enable && cfg.kev.manageService;
   managedPlanner = cfg.planner.manageService;
   modelAlias = name: let parts = lib.splitString ":" name; in
@@ -28,13 +28,18 @@ let
     }
   ));
   modelSpec = pkgs.writeText "aurora-models.json" (builtins.toJSON {
-    inherit (cfg.models) stt realtimeStt wakeWord wakeSource silero tts revisions;
-    voice = cfg.voice;
+    inherit (cfg.models) silero revisions;
+    stt = cfg.recognition.model;
+    realtimeStt = cfg.recognition.realtimeModel;
+    wakeWord = cfg.wakeWord.name;
+    wakeSource = cfg.wakeWord.source;
+    tts = cfg.speech.model;
+    voice = cfg.speech.voice;
     plannerModel = if cfg.planner.manageService then cfg.planner.model else null;
     kevDecisionModel = if cfg.kev.enable && cfg.kev.manageService then cfg.kev.model else null;
   });
   modelCheck = lib.escapeShellArgs [ "${cfg.package}/bin/aurora-models"
-    "--config" modelSpec "--root" cfg.modelDirectory "--check" ];
+    "--config" modelSpec "--root" cfg.models.directory "--check" ];
   packages = self.packages.${pkgs.stdenv.hostPlatform.system};
   runtimeConfig = pkgs.writeText "aurora-assistant.json" (builtins.toJSON {
     inference = { url = routerUrl; models = managedModels; startupTimeoutSeconds = cfg.inference.startupTimeoutSeconds; };
@@ -46,7 +51,8 @@ let
     kev = { inherit (cfg.kev) enable url threshold timeoutSeconds maxRounds announceEscalation escalationMessage contextSize; model = kevAlias; };
     safety = { inherit (cfg.safety) enable backend; model = if managedPlanner && cfg.safety.model == cfg.planner.model then plannerAlias else cfg.safety.model; };
     diagnostics = { inherit (cfg.diagnostics) logContent; };
-    presentation = { inherit (cfg.presentation) resultSeconds errorSeconds agentTimeoutSeconds; };
+    presentation = { inherit (cfg.overlay) resultSeconds errorSeconds;
+      agentTimeoutSeconds = cfg.conversation.timeoutSeconds; };
     conversation = { inherit (cfg.conversation) followUpSeconds maxFollowUps; };
     commands = {
       wpctl = "${pkgs.wireplumber}/bin/wpctl";
@@ -57,23 +63,23 @@ let
       kreadconfig = "${pkgs.kdePackages.kconfig}/bin/kreadconfig6";
     };
     llm = { inherit (cfg.planner) url; model = plannerAlias; };
-    tts = { url = "http://127.0.0.1:${toString cfg.ttsPort}/v1";
-      model = cfg.models.tts; voice = cfg.voice; wordSync = cfg.wordSync; };
+    tts = { url = "http://127.0.0.1:${toString cfg.speech.port}/v1";
+      model = cfg.speech.model; voice = cfg.speech.voice; wordSync = cfg.speech.wordSync; };
     stt = {
-      model = cfg.sttModel;
-      realtime_model = cfg.realtimeSttModel;
-      wake_model = cfg.wakeModel;
+      model = cfg.recognition.modelDirectory;
+      realtime_model = cfg.recognition.realtimeModelDirectory;
+      wake_model = cfg.wakeWord.modelFile;
       embedding_model = "${assetRoot}/embedding_model.onnx";
       melspectrogram_model = "${assetRoot}/melspectrogram.onnx";
       silero_model = "${assetRoot}/silero_vad.onnx";
-      silence_seconds = cfg.silenceSeconds;
-      wake_threshold = cfg.wakeThreshold;
-      wake_timeout = cfg.wakeTimeout;
-      max_utterance_seconds = cfg.maxUtteranceSeconds;
+      silence_seconds = cfg.recognition.silenceSeconds;
+      wake_threshold = cfg.wakeWord.threshold;
+      wake_timeout = cfg.wakeWord.timeoutSeconds;
+      max_utterance_seconds = cfg.recognition.maxUtteranceSeconds;
       device = "cpu";
       compute_type = "int8";
-      language = cfg.language;
-      input_device = cfg.inputDevice;
+      language = cfg.recognition.language;
+      input_device = cfg.recognition.inputDevice;
     };
   });
   common = {
@@ -97,8 +103,9 @@ let
   };
 in {
   imports = [
+    ./option-renames.nix
     (lib.mkRenamedOptionModule [ "programs" "aurora-assistant" "kev" "port" ] [ "programs" "aurora-assistant" "inference" "port" ])
-    (lib.mkRenamedOptionModule [ "programs" "aurora-assistant" "kev" "package" ] [ "programs" "aurora-assistant" "inferencePackage" ])
+    (lib.mkRenamedOptionModule [ "programs" "aurora-assistant" "kev" "package" ] [ "programs" "aurora-assistant" "inference" "package" ])
     (lib.mkRemovedOptionModule [ "programs" "aurora-assistant" "ollama" "enable" ]
       "Aurora now manages llama.cpp. Remove ollama.enable; use planner.manageService for an external local chat server.")
     (lib.mkRemovedOptionModule [ "programs" "aurora-assistant" "ollama" "model" ]
@@ -106,24 +113,10 @@ in {
   ];
   options.programs.aurora-assistant = {
     enable = lib.mkEnableOption "local Aurora voice assistant for Plasma Wayland";
-    user = lib.mkOption { type = types.str; description = "Existing desktop account that runs the assistant services and owns model files. This module does not create the account or configure login."; example = "alice"; };
-    package = lib.mkOption {
-      description = "Python runtime package that provides the controller, model provisioner, TTS server, approval CLI, and desktop D-Bus adapter."; type = types.package; default = packages.assistant; defaultText = lib.literalExpression "self.packages.<system>.assistant"; };
-    overlayPackage = lib.mkOption {
-      description = "Qt 6 Wayland overlay package. Replacements must implement the pinned VoiceOverlay1 D-Bus interface."; type = types.package; default = packages.default; defaultText = lib.literalExpression "self.packages.<system>.default"; };
-    modelDirectory = lib.mkOption { type = types.str; default = "/var/lib/aurora-models";
-      description = "Absolute writable directory for model generations. Named provisioning uses its current symlink. Keep managed assets outside home because provisioning uses ProtectHome."; };
-    models = {
-      enable = lib.mkOption { type = types.bool; default = true;
-        description = "Provision named models in a separate online setup service."; };
-      stt = lib.mkOption {
-        description = "Final speech model: a faster-whisper short name or a public Hugging Face CTranslate2 repository ID. Download failures stop provisioning."; type = types.str; default = "base.en"; };
-      realtimeStt = lib.mkOption {
-        description = "Provisional speech model used while speaking. A small model reduces update latency; final recognition uses models.stt."; type = types.str; default = "tiny.en"; };
-      wakeWord = lib.mkOption {
-        description = "Built-in openWakeWord model name, or a label for wakeSource. A text label does not train a new spoken phrase."; type = types.str; default = "hey_jarvis"; example = "hey_mycroft"; };
-      wakeSource = lib.mkOption {
-        description = "Optional public Hugging Face source for a trained custom wake-word ONNX model. Null selects the built-in model named by wakeWord."; default = null; type = types.nullOr (types.submodule {
+    wakeWord.name = lib.mkOption {
+        description = "Built-in openWakeWord model name, or a label for wakeWord.source. A text label does not train a new spoken phrase."; type = types.str; default = "hey_jarvis"; example = "hey_mycroft"; };
+    wakeWord.source = lib.mkOption {
+        description = "Optional public Hugging Face source for a trained custom wake-word ONNX model. Null selects the built-in model named by wakeWord.name."; default = null; type = types.nullOr (types.submodule {
         options = {
           repo = lib.mkOption {
             description = "Public Hugging Face repository ID containing the trained wake-word model."; type = types.str; };
@@ -133,10 +126,65 @@ in {
             description = "Repository-relative path to the compatible trained ONNX wake model."; type = types.str; };
         };
       }); };
+    wakeWord.modelFile = lib.mkOption { type = types.str; default = "${assetRoot}/wake.onnx";
+      description = "Absolute path to the trained openWakeWord ONNX wake-phrase model."; };
+    wakeWord.threshold = lib.mkOption {
+      description = "Wake detector threshold from 0.01 to one; zero is rejected because it activates on zero-confidence scores. Higher values reduce sensitivity; the useful threshold depends on the microphone and trained model."; type = types.numbers.between 0.01 1; default = 0.5; };
+    wakeWord.timeoutSeconds = lib.mkOption {
+      description = "Seconds allowed to start speaking after wake-word activation."; type = types.numbers.between 1 60; default = 8; };
+    recognition.model = lib.mkOption {
+        description = "Final speech model: a faster-whisper short name or a public Hugging Face CTranslate2 repository ID. Download failures stop provisioning."; type = types.str; default = "base.en"; };
+    recognition.realtimeModel = lib.mkOption {
+        description = "Provisional speech model used while speaking. A small model reduces update latency; final recognition uses recognition.model."; type = types.str; default = "tiny.en"; };
+    recognition.modelDirectory = lib.mkOption { type = types.str; default = "${assetRoot}/whisper";
+      description = "Absolute path to the final CTranslate2 speech recognition model."; };
+    recognition.realtimeModelDirectory = lib.mkOption { type = types.str; default = "${assetRoot}/whisper-realtime";
+      description = "Absolute path to the provisional CTranslate2 speech recognition model."; };
+    recognition.silenceSeconds = lib.mkOption {
+      description = "Seconds of silence that finalize recognition after speech. Increase this value to allow longer pauses."; type = types.numbers.between 0.2 5; default = 0.7; };
+    recognition.maxUtteranceSeconds = lib.mkOption {
+      description = "Maximum seconds for a voice turn including final transcription. A timeout discards the request and reloads recognition."; type = types.numbers.between 5 300; default = 45; };
+    recognition.inputDevice = lib.mkOption {
+      description = "SoundDevice input index or device-name substring. Null uses the default input. Select a microphone rather than a monitor source."; type = types.nullOr (types.either types.int types.str); default = null; };
+    recognition.language = lib.mkOption {
+      description = "Whisper language code for recognition. TTS currently uses English; changing this does not change synthesis language."; type = types.str; default = "en"; };
+    speech.model = lib.mkOption {
+        description = "Supertonic model name: supertonic, supertonic-2, or supertonic-3. Models are downloaded at provisioning, never during synthesis."; type = types.str; default = "supertonic-3"; };
+    speech.voice = lib.mkOption {
+      description = "Supertonic voice style, F1 through F5 or M1 through M5. Provisioning checks that the style exists in the selected model."; type = types.enum [ "M1" "M2" "M3" "M4" "M5" "F1" "F2" "F3" "F4" "F5" ]; default = "F1"; };
+    speech.wordSync = lib.mkOption {
+      type = types.bool; default = true;
+      description = "Align reply words locally against generated audio and reveal text using the playback device clock. Reuses recognition.realtimeModelDirectory in the TTS service, adding memory and preparation latency. Alignment failures use chunk captions, not fabricated word timestamps.";
+    };
+    speech.port = lib.mkOption {
+      description = "Loopback TCP port for the local OpenAI-compatible speech endpoint. Must be free on the host."; type = types.port; default = 7788; };
+    overlay.resultSeconds = lib.mkOption { type = types.numbers.between 2 60; default = 6;
+      description = "Keep the completed result visible this long after speech ends."; };
+    overlay.errorSeconds = lib.mkOption { type = types.numbers.between 3 120; default = 10;
+      description = "Keep error messages visible this long before returning to idle."; };
+    conversation.timeoutSeconds = lib.mkOption { type = types.numbers.between 10 300; default = 60;
+      description = "Maximum planning, discovery, review and approval time per request. Timeouts show an error instead of waiting indefinitely."; };
+
+    overlay.package = lib.mkOption {
+      description = "Qt 6 Wayland overlay package. Replacements must implement the pinned VoiceOverlay1 D-Bus interface."; type = types.package; default = packages.default; defaultText = lib.literalExpression "self.packages.<system>.default"; };
+    inference.package = lib.mkOption {
+      type = types.package; default = packages.llama-server;
+      defaultText = lib.literalExpression "self.packages.<system>.llama-server";
+      description = "Shared llama.cpp package for Kev and the planner. Uses nixpkgs at version 0.7.0 or newer, otherwise a pinned compatibility build. A GPU-enabled package can be supplied here.";
+    };
+    user = lib.mkOption { type = types.str; description = "Existing desktop account that runs the assistant services and owns model files. This module does not create the account or configure login."; example = "alice"; };
+    package = lib.mkOption {
+      description = "Python runtime package that provides the controller, model provisioner, TTS server, approval CLI, and desktop D-Bus adapter."; type = types.package; default = packages.assistant; defaultText = lib.literalExpression "self.packages.<system>.assistant"; };
+
+    models = {
+      directory = lib.mkOption { type = types.str; default = "/var/lib/aurora-models";
+      description = "Absolute writable directory for model generations. Named provisioning uses its current symlink. Keep managed assets outside home because provisioning uses ProtectHome."; };
+      enable = lib.mkOption { type = types.bool; default = true;
+        description = "Provision named models in a separate online setup service."; };
+
       silero = lib.mkOption {
         description = "Voice activity model identifier. Currently only silero-vad is supported; its file comes from the locked Python package."; type = types.str; default = "silero-vad"; };
-      tts = lib.mkOption {
-        description = "Supertonic model name: supertonic, supertonic-2, or supertonic-3. Models are downloaded at provisioning, never during synthesis."; type = types.str; default = "supertonic-3"; };
+
       revisions = lib.mkOption { type = types.attrsOf types.str; default = {};
         description = "Optional Hugging Face revisions keyed by stt, realtimeStt, tts, kev, or planner."; };
     };
@@ -179,7 +227,7 @@ in {
     };
     kev.maxRounds = lib.mkOption {
       type = types.ints.between 1 4; default = 2;
-      description = "Maximum Kev decision rounds, including selection from observed D-Bus capabilities. Calls needing arguments escalate to the planner. These rounds count toward settings.maxRounds.";
+      description = "Maximum Kev decision rounds, including selection from observed D-Bus capabilities. Finite arguments can use further Kev decisions; free-form arguments escalate to the planner. These rounds count toward settings.maxRounds.";
     };
     kev.announceEscalation = lib.mkOption {
       type = types.bool; default = true;
@@ -201,7 +249,7 @@ in {
     kev.modelFile = lib.mkOption { type = types.str; default = "${assetRoot}/kev.gguf";
       description = "Local Kev GGUF path. Normal operation never downloads model files."; };
     kev.gpuLayers = lib.mkOption { type = types.ints.unsigned; default = 0;
-      description = "Layers offloaded by llama.cpp. Zero selects CPU; use a GPU-enabled inferencePackage before increasing this."; };
+      description = "Layers offloaded by llama.cpp. Zero selects CPU; use a GPU-enabled inference.package before increasing this."; };
     kev.contextSize = lib.mkOption { type = types.ints.between 4096 65536; default = 32768;
       description = "Managed Kev context capacity in tokens, including capability state and decision questions. Longer accepted contexts do not guarantee equivalent accuracy; upstream Kev-4B validation reports 8192 tokens. Also used for client request budgeting."; };
     kev.cacheRamMiB = lib.mkOption { type = types.ints.unsigned; default = 512;
@@ -211,13 +259,8 @@ in {
     kev.threshold = lib.mkOption { type = types.numbers.between 0.5 1; default = 0.95;
       description = "Minimum selected-option probability for automatic routing or low-risk review. Generic D-Bus mutations still require approval."; };
     diagnostics.logContent = lib.mkOption { type = types.bool; default = false;
-      description = "Include final transcripts and assistant replies in the local journal. Off by default; timing and error events are always logged. Never records audio."; };
-    presentation.resultSeconds = lib.mkOption { type = types.numbers.between 2 60; default = 6;
-      description = "Keep the completed result visible this long after speech ends."; };
-    presentation.errorSeconds = lib.mkOption { type = types.numbers.between 3 120; default = 10;
-      description = "Keep error messages visible this long before returning to idle."; };
-    presentation.agentTimeoutSeconds = lib.mkOption { type = types.numbers.between 10 300; default = 60;
-      description = "Maximum planning, discovery, review and approval time per request. Timeouts show an error instead of waiting indefinitely."; };
+      description = "Include transcripts, replies, model output and exception messages in the local journal. Off by default; timing and error events are always logged. Never records audio."; };
+
     conversation.followUpSeconds = lib.mkOption { type = types.numbers.between 0 60; default = 12;
       description = "Listen without another wake word after a clarification question for this many seconds. Zero disables follow-up listening."; };
     conversation.maxFollowUps = lib.mkOption { type = types.ints.between 0 4; default = 2;
@@ -234,16 +277,7 @@ in {
       description = "Allowed system-bus service namespaces, matched at dot boundaries; empty entries match nothing. Normal D-Bus and Polkit rules apply. Generic changes always require local approval."; type = types.listOf types.str; default = [ "org.freedesktop.UPower" ]; };
     settings.maxRounds = lib.mkOption {
       description = "Maximum discovery/planning rounds per request. Each round allows at most four actions. No mutations run when discovery exhausts this limit."; type = types.ints.between 1 8; default = 5; };
-    wakeModel = lib.mkOption { type = types.str; default = "${assetRoot}/wake.onnx";
-      description = "Absolute path to the trained openWakeWord ONNX wake-phrase model."; };
-    sttModel = lib.mkOption { type = types.str; default = "${assetRoot}/whisper";
-      description = "Absolute path to the final CTranslate2 speech recognition model."; };
-    realtimeSttModel = lib.mkOption { type = types.str; default = "${assetRoot}/whisper-realtime";
-      description = "Absolute path to the provisional CTranslate2 speech recognition model."; };
-    wakeTimeout = lib.mkOption {
-      description = "Seconds allowed to start speaking after wake-word activation."; type = types.numbers.between 1 60; default = 8; };
-    maxUtteranceSeconds = lib.mkOption {
-      description = "Maximum seconds for a voice turn including final transcription. A timeout discards the request and reloads recognition."; type = types.numbers.between 5 300; default = 45; };
+
     dbusActions = lib.mkOption {
       default = {};
       description = "Optional fixed D-Bus shortcuts. No entries are required for generic live discovery or built-in desktop controls. These calls require local approval.";
@@ -276,27 +310,7 @@ in {
       default = {};
       description = "Optional spoken aliases for installed desktop IDs. Normal application discovery needs no aliases; visible XDG desktop entries are listed automatically over D-Bus.";
       example = { files = "org.kde.dolphin.desktop"; }; };
-    silenceSeconds = lib.mkOption {
-      description = "Seconds of silence that finalize recognition after speech. Increase this value to allow longer pauses."; type = types.numbers.between 0.2 5; default = 0.7; };
-    wakeThreshold = lib.mkOption {
-      description = "Wake detector threshold from 0.01 to one; zero is rejected because it activates on zero-confidence scores. Higher values reduce sensitivity; the useful threshold depends on the microphone and trained model."; type = types.numbers.between 0.01 1; default = 0.5; };
-    language = lib.mkOption {
-      description = "Whisper language code for recognition. TTS currently uses English; changing this does not change synthesis language."; type = types.str; default = "en"; };
-    inputDevice = lib.mkOption {
-      description = "SoundDevice input index or device-name substring. Null uses the default input. Select a microphone rather than a monitor source."; type = types.nullOr (types.either types.int types.str); default = null; };
-    voice = lib.mkOption {
-      description = "Supertonic voice style, F1 through F5 or M1 through M5. Provisioning checks that the style exists in the selected model."; type = types.enum [ "M1" "M2" "M3" "M4" "M5" "F1" "F2" "F3" "F4" "F5" ]; default = "F1"; };
-    wordSync = lib.mkOption {
-      type = types.bool; default = true;
-      description = "Align reply words locally against generated audio and reveal text using the playback device clock. Reuses realtimeSttModel in the TTS service, adding memory and preparation latency. Alignment failures use chunk captions, not fabricated word timestamps.";
-    };
-    ttsPort = lib.mkOption {
-      description = "Loopback TCP port for the local OpenAI-compatible speech endpoint. Must be free on the host."; type = types.port; default = 7788; };
-    inferencePackage = lib.mkOption {
-      type = types.package; default = packages.llama-server;
-      defaultText = lib.literalExpression "self.packages.<system>.llama-server";
-      description = "Shared llama.cpp package for Kev and the planner. Uses nixpkgs at version 0.7.0 or newer, otherwise a pinned compatibility build. A GPU-enabled package can be supplied here.";
-    };
+
     inference.port = lib.mkOption { type = types.port; default = 8008;
       description = "Loopback port shared by Kev and planner APIs on the managed llama.cpp router."; };
     inference.startupTimeoutSeconds = lib.mkOption { type = types.ints.between 30 600; default = 180;
@@ -315,7 +329,7 @@ in {
       contextSize = lib.mkOption { type = types.ints.between 4096 131072; default = 32768;
         description = "Planner context capacity in tokens, including action schemas, observations and response. Larger values require more memory. The selected model must support this capacity."; };
       gpuLayers = lib.mkOption { type = types.ints.unsigned; default = 0;
-        description = "Planner layers to offload. Zero selects CPU. Supply a GPU-enabled inferencePackage before increasing this."; };
+        description = "Planner layers to offload. Zero selects CPU. Supply a GPU-enabled inference.package before increasing this."; };
     };
   };
   config = lib.mkIf cfg.enable {
@@ -324,7 +338,7 @@ in {
         message = "A custom planner URL requires planner.manageService=false."; }
       { assertion = !managedKev || cfg.kev.url == routerUrl;
         message = "A custom Kev URL requires kev.manageService=false."; }
-      { assertion = managedModels == [] || (cfg.inference.port != cfg.ttsPort
+      { assertion = managedModels == [] || (cfg.inference.port != cfg.speech.port
           && (!(cfg.webSearch.enable && cfg.webSearch.manageService) || cfg.inference.port != cfg.webSearch.port));
         message = "The inference router must use a different port from TTS and managed search."; }
       { assertion = !(managedKev && managedPlanner) || kevAlias != plannerAlias;
@@ -337,7 +351,7 @@ in {
         message = "safety.model must match planner.model when using the managed planner for review."; }
       { assertion = cfg.safety.backend != "kev" || cfg.kev.enable;
         message = "Aurora safety.backend=kev requires kev.enable=true."; }
-      { assertion = lib.hasPrefix "/" cfg.modelDirectory;
+      { assertion = lib.hasPrefix "/" cfg.models.directory;
       message = "programs.aurora-assistant.modelDirectory must be absolute."; }
       { assertion = !(cfg.webSearch.enable && cfg.webSearch.manageService) ||
           cfg.webSearch.url == "http://127.0.0.1:${toString cfg.webSearch.port}";
@@ -345,10 +359,10 @@ in {
       { assertion = !(cfg.webSearch.enable && cfg.webSearch.manageService) || cfg.webSearch.engines != [];
         message = "Aurora managed search requires at least one search engine."; }
     ];
-    environment.systemPackages = [ cfg.package cfg.overlayPackage ];
+    environment.systemPackages = [ cfg.package cfg.overlay.package ];
     environment.etc."aurora-assistant/models.json".source = modelSpec;
     systemd.tmpfiles.rules = lib.mkIf cfg.models.enable [
-      "d ${lib.escapeShellArg cfg.modelDirectory} 0750 ${cfg.user} - -"
+      "d ${lib.escapeShellArg cfg.models.directory} 0750 ${cfg.user} - -"
     ];
     systemd.services.aurora-models = lib.mkIf cfg.models.enable {
       description = "Provision named local Aurora models";
@@ -368,10 +382,10 @@ in {
         ProtectSystem = "strict";
         ProtectHome = true;
         NoNewPrivileges = true;
-        ReadWritePaths = [ cfg.modelDirectory ];
+        ReadWritePaths = [ cfg.models.directory ];
         TimeoutStartSec = "1h";
         ExecStart = lib.escapeShellArgs [ "${cfg.package}/bin/aurora-models"
-          "--config" modelSpec "--root" cfg.modelDirectory ];
+          "--config" modelSpec "--root" cfg.models.directory ];
       };
     };
     services.searx = lib.mkIf (cfg.webSearch.enable && cfg.webSearch.manageService) {
@@ -431,7 +445,7 @@ in {
     systemd.user.services.aurora-voice-overlay = lib.recursiveUpdate common {
       description = "Aurora Wayland overlay";
       serviceConfig = { Type = "dbus"; BusName = "org.example.VoiceOverlay";
-        ExecStart = "${cfg.overlayPackage}/bin/aurora-voice-overlay"; };
+        ExecStart = "${cfg.overlay.package}/bin/aurora-voice-overlay"; };
       environment.QT_QPA_PLATFORM = "wayland";
     };
     systemd.user.services.aurora-tts = lib.recursiveUpdate common {
@@ -439,7 +453,7 @@ in {
       serviceConfig.ExecStartPre = lib.optional cfg.models.enable modelCheck;
       environment = offline;
       serviceConfig.ExecStart = lib.escapeShellArgs ([ "${cfg.package}/bin/aurora-tts"
-        "--model-dir" "${assetRoot}/supertonic" "--model" cfg.models.tts "--port" (toString cfg.ttsPort) ] ++ lib.optionals cfg.wordSync [ "--alignment-model" cfg.realtimeSttModel ]);
+        "--model-dir" "${assetRoot}/supertonic" "--model" cfg.speech.model "--port" (toString cfg.speech.port) ] ++ lib.optionals cfg.speech.wordSync [ "--alignment-model" cfg.recognition.realtimeModelDirectory ]);
     };
     systemd.user.services.aurora-inference = lib.mkIf (managedModels != []) (lib.recursiveUpdate common {
       description = "Local Aurora llama.cpp model router";
@@ -448,7 +462,7 @@ in {
       serviceConfig.RuntimeDirectory = "aurora-inference";
       serviceConfig.RuntimeDirectoryMode = "0700";
       serviceConfig.KillMode = "control-group";
-      serviceConfig.ExecStart = lib.escapeShellArgs [ "${cfg.inferencePackage}/bin/llama-server"
+      serviceConfig.ExecStart = lib.escapeShellArgs [ "${cfg.inference.package}/bin/llama-server"
         "--models-preset" routerPreset "--models-max" (toString (builtins.length managedModels))
         "--host" "127.0.0.1" "--port" (toString cfg.inference.port) ];
     });

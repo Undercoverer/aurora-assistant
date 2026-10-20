@@ -1,3 +1,5 @@
+> For grouped NixOS options and migration names, see [Configuration](CONFIGURATION.md). Older option names below remain compatible.
+
 # Declarative setup, settings discovery, and local approval
 
 This is the current setup guide. The original overlay editor and D-Bus contract

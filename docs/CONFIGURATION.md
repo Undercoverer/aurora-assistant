@@ -1,190 +1,96 @@
-> This document describes the initial fixed-action configuration. For current named-model provisioning, generic D-Bus discovery and approvals, use [SETUP.md](SETUP.md).
+# NixOS configuration
 
-# Configuration and GitHub updates
+## Start here
 
-## Use the repository as your flake input
-
-```nix
-inputs.aurora.url = "github:Undercoverer/aurora-assistant";
-```
-
-Keep the existing wrapper that imports `inputs.aurora.nixosModules.default`.
-No flake-parts or import-tree layout change is needed. This repository is private;
-Nix needs GitHub credentials with read access, configured outside committed files.
-Alternatively, use Git over SSH if the machine already has a working GitHub key:
-
-```nix
-inputs.aurora.url = "git+ssh://git@github.com/Undercoverer/aurora-assistant.git";
-```
-
-The host's flake.lock pins a commit. Pushing a change does not silently change a
-running system. Fetch a new revision, build, and apply it:
-
-```sh
-cd /etc/nixos
-nix flake update aurora
-sudo nixos-rebuild switch --flake .#framework
-```
-
-Keep your local `programs.aurora-assistant` settings in the host repository.
-They do not belong in this project. Do not add a `nixpkgs.follows` override until
-the build is working with Aurora's own locked dependencies.
-
-## Wake phrase and speech settings
+Import `inputs.aurora-assistant.nixosModules.default` into the host's NixOS
+modules, then set:
 
 ```nix
 programs.aurora-assistant = {
   enable = true;
-  user = "YOUR_USERNAME";
-  modelDirectory = "/var/lib/aurora-models";
-
-  wakeModel = "/var/lib/aurora-models/hey_aurora.onnx";
-  wakeThreshold = 0.5;
-  wakeTimeout = 8;
-  silenceSeconds = 0.7;
-  maxUtteranceSeconds = 45;
-
-  sttModel = "/var/lib/aurora-models/whisper";
-  realtimeSttModel = "/var/lib/aurora-models/whisper-realtime";
-  language = "en";
-  inputDevice = null;
-  voice = "F1";
-  planner.model = "hf.co/Qwen/Qwen3-4B-GGUF:Q4_K_M";
-
-  applications = {
-    files = "org.kde.dolphin.desktop";
-    browser = "firefox.desktop";
-  };
+  user = "foxkj"; # Existing Plasma account.
+  wakeWord.name = "alexa";
 };
 ```
 
-`hey_aurora.onnx` is an illustrative filename, not a bundled model. The actual
-phrase is encoded in the trained openWakeWord model. Renaming a model or typing
-a different phrase into a config does not change what it detects. Supply a
-pretrained model for the desired phrase or train a compatible custom model.
-The feature-extractor files `embedding_model.onnx` and `melspectrogram.onnx`
-still come from modelDirectory. The initial default wakeModel is
-`${modelDirectory}/wake.onnx`.
+The default trained phrase is Hey Jarvis if `wakeWord.name` is omitted. Kev, Qwen,
+Supertonic, provisioning, the shared llama.cpp router and desktop user services
+are configured automatically. Default inference uses the CPU. No application
+list, fixed D-Bus action list, ports or model paths are needed for this setup.
+Download failures stop model provisioning rather than substituting another model.
+Initial provisioning requires internet access; normal voice operation is local.
 
-Higher wakeThreshold requires more confidence and tends to reduce false wakes,
-but can miss real calls. Lower it only after checking the intended model and
-microphone. wakeTimeout is the time to start speech after activation.
-silenceSeconds is the end-of-speech silence. maxUtteranceSeconds bounds the turn,
-including final transcription; timeout discards the request and reloads STT.
+## Configure by task
 
-inputDevice accepts a SoundDevice input index or device-name substring. `null`
-uses its default. Use an actual input, not a speaker-monitor source. voice accepts
-M1–M5 or F1–F5 and selects a local Supertonic style. language controls recognition;
-TTS currently synthesizes with `lang="en"`.
+| Group | Purpose | Common options |
+| --- | --- | --- |
+| `wakeWord` | Activation | `name`, `threshold`, `timeoutSeconds` |
+| `recognition` | Speech input | `model`, `realtimeModel`, `inputDevice`, `language`, `silenceSeconds` |
+| `speech` | Spoken output | `model`, `voice`, `wordSync` |
+| `overlay` | Result/error display | `resultSeconds`, `errorSeconds` |
+| `conversation` | Request and follow-up limits | `timeoutSeconds`, `followUpSeconds`, `maxFollowUps` |
+| `kev` | Fast decisions | `model`, `threshold`, `contextSize`, `cacheRamMiB` |
+| `planner` | Generation and complex requests | `model`, `contextSize`, `gpuLayers` |
+| `models` | Asset provisioning | `enable`, `directory`, `revisions` |
+| `inference` | Shared llama.cpp service | `package`, `port`, `startupTimeoutSeconds` |
+| `diagnostics` | Content logging | `logContent` |
+| `webSearch` | Optional online search through a local API | `enable`, `engines` |
 
-Change Nix settings and rebuild to update the generated service configuration.
-Do not edit generated files in `/nix/store`. The JSON example is for running
-`aurora-assistant --config ...` manually; editing it does not affect the NixOS
-service. The overlay's visual settings are separate: use its editor or the
-existing D-Bus theme methods, then SaveConfig to persist them.
+See [the complete example](../examples/customized.nix). Each option has a
+type, default where appropriate, and description in the generated option reference
+(`nix build .#docs` in the assistant checkout). Existing safety and D-Bus scope
+options remain under `safety` and `settings`.
 
-## Applications
-
-The left side is a semantic alias supplied to the LLM. The right side is an
-installed `.desktop` filename. With `files = "org.kde.dolphin.desktop"`, a request
-such as "open files" can become:
-
-```json
-{"actions":[{"name":"open_app","argument":"files"}],"reply":""}
-```
-
-The executor maps `files` to the configured filename and calls
-`gtk-launch org.kde.dolphin.desktop`. The model cannot supply command-line
-arguments, executable paths, or desktop filenames that are absent from this map.
-The alias need not exactly match the spoken sentence, but clear aliases improve
-selection. Applications must be installed separately. Filenames vary by package.
-List candidates on the target host:
-
-```sh
-find /run/current-system/sw/share/applications \
-  ~/.nix-profile/share/applications ~/.local/share/applications \
-  -maxdepth 1 -name '*.desktop' -printf '%f\n' 2>/dev/null
-```
-
-A successful launch request means the launcher accepted it, not that the
-application finished opening or reached a particular screen.
-
-## Model capacity and permissions are separate
-
-`planner.model = "hf.co/Qwen/Qwen3-8B-GGUF:Q4_K_M"` requests a larger GGUF.
-Provisioning resolves and downloads the requested quantization, failing if it does
-not exist. Model size depends on host memory and acceptable latency. The model
-must support the structured-output schema. Extra capacity grants no extra access.
-GPU acceleration requires a compatible inferencePackage and planner.gpuLayers;
-changing the model name alone does not enable it. See [LLAMA_CPP.md](LLAMA_CPP.md).
-
-The controller supports bounded discovery rounds and batches of up to four actions.
-It has short clarification context, but no persistent conversation memory or
-model-generated Python/shell execution.
-
-## D-Bus capabilities
-
-D-Bus support is configured with `dbusActions`. Every entry fixes the bus,
-destination, object path, interface, method, argument signature, and arguments.
-The model sees the alias and description and can select that capability. It
-cannot replace its endpoint or arguments. For example, this uses the already
-pinned overlay interface:
+## Common changes
 
 ```nix
-programs.aurora-assistant.dbusActions.jade_theme = {
-  description = "Change the assistant overlay color palette to northern jade";
-  bus = "session";
-  destination = "org.example.VoiceOverlay";
-  path = "/org/example/VoiceOverlay";
-  interface = "org.example.VoiceOverlay1";
-  member = "LoadPalette";
-  signature = "s";
-  arguments = [ "northern-jade" ];
-  expectedReply = [ true ];
-  successMessage = "Overlay palette changed.";
+programs.aurora-assistant = {
+  recognition = {
+    inputDevice = null; # Default microphone, or a SoundDevice name substring/index.
+    silenceSeconds = 1.0; # Allow longer pauses before finalizing.
+  };
+  speech = { voice = "M1"; wordSync = true; };
+  overlay = { resultSeconds = 8; errorSeconds = 15; };
+  conversation.followUpSeconds = 15;
 };
 ```
 
-The model selects `{ "name": "dbus", "argument": "jade_theme" }`. Endpoint
-names and argument types are validated before starting the assistant. Errors,
-access denials, timeouts, and unexpected replies do not report success. If
-expectedReply is omitted, a normal D-Bus method return is sufficient. This sample
-changes the current palette in memory; it does not invoke SaveConfig.
+Wake names select trained models; changing the label does not train a new phrase.
+For a custom trained ONNX model, set `wakeWord.source = { repo = "owner/repo";
+revision = "exact-commit"; file = "wake.onnx"; };` and use `wakeWord.name` as its label.
+Use actual repository values. See [model provisioning](SETUP.md) for available
+sources and revision behavior.
 
-For another desktop service, inspect its actual interface on the target host:
+For an external local chat server, set `planner.manageService = false`,
+`planner.url = "http://127.0.0.1:9000/v1"` and `planner.model` to its served alias.
+Kev stays managed unless `kev.manageService` is also disabled. For GPU inference,
+select a compatible `inference.package` and then configure per-model `gpuLayers`;
+changing layers alone does not add GPU support.
 
-```sh
-busctl --user list
-busctl --user introspect SERVICE OBJECT_PATH
-# For system services:
-busctl --system introspect SERVICE OBJECT_PATH
-```
+Model *names* select downloaded assets. `wakeWord.modelFile`,
+`recognition.modelDirectory`, `recognition.realtimeModelDirectory`, and per-LLM
+`modelFile` options are advanced local-path overrides. Normally leave them alone.
+For fully manual assets, disable `models.enable` and follow the asset layout in
+the provisioning guide; disabling it does not remove required model files.
 
-Copy the exact endpoint, method, and signature into a capability. The service must
-actually expose the operation, and its normal D-Bus/Polkit rules still apply.
-The controller runs as the desktop user and does not bypass those rules. Merely
-exposing a D-Bus interface does not make every method suitable for voice control.
+## Existing configurations
 
-This version supports fixed-argument capabilities. Several presets can expose
-useful choices such as different brightness levels. Variable model-supplied
-arguments need explicit schemas and range validation in a future extension.
-A general "call anything on D-Bus" capability is not enabled.
+Old option names still forward to the new options through NixOS rename modules,
+with migration warnings. Defaults and runtime JSON field names are unchanged.
+Use one spelling for a setting; different values under old and new names conflict
+rather than silently overriding each other. The complete mapping is in
+[option-renames.nix](../nix/option-renames.nix).
 
-## torchaudio packaging fix
+| Old option | New option |
+| --- | --- |
+| `models.wakeWord` | `wakeWord.name` |
+| `models.stt`, `models.realtimeStt` | `recognition.model`, `recognition.realtimeModel` |
+| `silenceSeconds`, `inputDevice` | `recognition.silenceSeconds`, `recognition.inputDevice` |
+| `models.tts`, `voice`, `wordSync` | `speech.model`, `speech.voice`, `speech.wordSync` |
+| `presentation.resultSeconds`, `presentation.errorSeconds` | `overlay.resultSeconds`, `overlay.errorSeconds` |
+| `presentation.agentTimeoutSeconds` | `conversation.timeoutSeconds` |
+| `modelDirectory`, `inferencePackage` | `models.directory`, `inference.package` |
 
-The previous wheel package did not expose PyTorch's nested shared-library
-directory to autoPatchelf. It also contained optional FFmpeg 4/5/6 plug-ins and
-SoX bindings without their native dependencies. The new override:
-
-- Adds the matching locked `torch` package and `pkgs.sox` to buildInputs.
-- Adds `${torch}/${python.sitePackages}/torch/lib` to the autoPatchelf search path.
-- Removes optional `torio/lib/*ffmpeg*.so` plug-ins. Aurora uses SoundDevice and
-  SoundFile for audio I/O; it does not use torio FFmpeg streaming.
-- Disables torio FFmpeg probing with TORIO_USE_FFMPEG=0 in the application runtime.
-- Keeps autoPatchelf strict; missing core libraries are not ignored.
-
-`nix flake check` now includes an import check for torch, torchaudio, sounddevice,
-and soundfile. This must run on a Nix-capable host. The edit addresses the reported
-dependencies, but a successful Nix build has not been verified in the delivery
-environment. The Python suite passes 21 tests; one live session-bus integration
-test is skipped there because socket creation is unavailable.
+The [flake-parts/import-tree example](../examples/flake-parts) uses the same options:
+import the exported module into the host's NixOS module list, not directly into the
+flake-parts module scope. Existing Kev/planner settings need no migration.

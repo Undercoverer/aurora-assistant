@@ -1,3 +1,5 @@
+> For grouped NixOS options and migration names, see [Configuration](CONFIGURATION.md). Older option names below remain compatible.
+
 > This is the original integration-build design record. Current model provisioning and settings control are documented in [SETUP.md](SETUP.md).
 
 # Aurora local assistant: integration build 0.1

@@ -145,6 +145,7 @@
       });
 
       checks = eachSystem (system: pkgs: {
+        configuration = import ./tests/nixos-options.nix { inherit self nixpkgs pkgs system; };
         documentation = self.packages.${system}.docs;
         audioImports = pkgs.runCommand "aurora-audio-imports" {
           nativeBuildInputs = [ self.packages.${system}.assistant ];
