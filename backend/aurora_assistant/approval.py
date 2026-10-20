@@ -124,16 +124,7 @@ class Approval:
             self.path.unlink(missing_ok=True)
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('command', choices=['pending', 'sources', 'capabilities', 'approve', 'deny'])
-    parser.add_argument('id', nargs='?')
-    args = parser.parse_args()
-    if args.command in {'approve', 'deny'} and not args.id:
-        parser.error('approve and deny require the exact id shown by pending')
-    request = {'command': args.command}
-    if args.command in {'approve', 'deny'}:
-        request['id'] = args.id
+def control_request(request):
     with socket.socket(socket.AF_UNIX) as connection:
         connection.settimeout(5)
         connection.connect(str(socket_path()))
@@ -146,7 +137,30 @@ def main():
             chunks.extend(data)
             if len(chunks) > 262144:
                 raise SystemExit('Approval response too large')
-    result = json.loads(chunks)
+    return json.loads(chunks)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('command', choices=['pending', 'sources', 'capabilities', 'approve', 'deny'])
+    parser.add_argument('id', nargs='?')
+    args = parser.parse_args()
+    if args.command in {'approve', 'deny'} and not args.id:
+        parser.error('approve and deny require the exact id shown by pending')
+    request = {'command': args.command}
+    if args.command in {'approve', 'deny'}:
+        request['id'] = args.id
+    try:
+        result = control_request(request)
+    except (FileNotFoundError, ConnectionRefusedError):
+        raise SystemExit('Aurora control is unavailable: the controller is stopped or has not created its socket. '
+                         'From the configured Plasma account, run: systemctl --user restart aurora-assistant.target. '
+                         'Then inspect: systemctl --user status aurora-controller.service') from None
+    except PermissionError:
+        raise SystemExit('Aurora control access was denied. Run this command as the configured Plasma user, without sudo.') from None
+    except (OSError, ValueError) as exc:
+        raise SystemExit('Aurora control request failed (' + type(exc).__name__ + '). '
+                         'Run aurora-report --since "30 minutes ago" for service details.') from None
     print(result['documentation'] if args.command == 'capabilities' and 'documentation' in result else json.dumps(result, indent=2))
     if 'error' in result:
         raise SystemExit(1)

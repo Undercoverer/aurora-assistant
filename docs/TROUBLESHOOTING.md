@@ -29,6 +29,37 @@ runtime search via external compiler/linker tools. The wrapper retains native
 library paths too. The flake has an empty-environment audio import check; build
 and runtime validation on the actual NixOS machine are still necessary.
 
+## All user services are inactive; control socket is missing
+
+A completed `aurora-models.service` only means the model files were provisioned.
+It does not prove that the graphical-session target or controller is running.
+`aurora-control` needs the controller's private socket; it cannot query capabilities
+while that controller is stopped. Installed unit files are not evidence of active
+services. A rebuild can also leave new graphical-session dependencies needing an
+explicit start in an already running login session.
+
+From the configured Plasma user's terminal, without sudo:
+
+```sh
+systemctl --user daemon-reload
+systemctl --user restart aurora-assistant.target
+systemctl --user status aurora-assistant.target aurora-inference.service aurora-controller.service --no-pager
+```
+
+Allow the inference workers to load. The default startup deadline is 180 seconds.
+If the target is skipped, inspect `ConditionResult` and confirm the current user
+matches `programs.aurora-assistant.user`. If services stop or fail, export a report:
+
+```sh
+aurora-report --since '10 minutes ago' --clipboard
+```
+
+Once the controller runs, `aurora-control capabilities` can connect. Its catalog
+starts empty and is populated by successful D-Bus discovery requests; an empty
+catalog is different from a missing control socket. Reports now include both
+Aurora and graphical-session targets, model-provisioner status, stop/start times,
+exit type, condition results and the units named in manager journal messages.
+
 ## One unified diagnostic report
 
 Reproduce the problem, then copy this report directly to the Wayland clipboard:
