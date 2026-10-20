@@ -79,6 +79,7 @@
           };
         };
       in {
+        mcdbus = pkgs.callPackage ./nix/mcdbus.nix {};
         kev-server = self.packages.${system}.llama-server;
         llama-server = if pkgs.lib.versionAtLeast pkgs.llama-cpp.version "0.7.0"
           then pkgs.llama-cpp
