@@ -56,7 +56,11 @@ class Inference:
                 json=payload, timeout=timeout,
             )
             response.raise_for_status()
-            output = response.json()["choices"][0]["message"]["content"]
+            try:
+                envelope = response.json()
+                output = envelope["choices"][0]["message"]["content"]
+            except (ValueError, KeyError, IndexError, TypeError) as exc:
+                raise PlanValidationError('Model response has an invalid completion envelope') from exc
             if not isinstance(output, str):
                 raise PlanValidationError('Model response has no text content')
             content("model.output", output)

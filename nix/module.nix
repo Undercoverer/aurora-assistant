@@ -16,6 +16,9 @@ let
     // lib.optionalAttrs managedKev {
       "${kevAlias}" = { model = cfg.kev.modelFile; ctx-size = cfg.kev.contextSize;
         cache-ram = cfg.kev.cacheRamMiB;
+        # Kev reads all option outputs from one logical batch. Context alone
+        # does not lift the server's separate question/options batch limit.
+        batch-size = cfg.kev.contextSize;
         n-gpu-layers = cfg.kev.gpuLayers; load-on-startup = true; };
     }
     // lib.optionalAttrs managedPlanner {

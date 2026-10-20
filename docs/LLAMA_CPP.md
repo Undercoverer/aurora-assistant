@@ -143,6 +143,7 @@ sleep-idle-seconds = -1
 model = /var/lib/aurora-models/current/kev.gguf
 ctx-size = 32768
 cache-ram = 512
+batch-size = 32768
 n-gpu-layers = 0
 load-on-startup = true
 [hf.co/Qwen/Qwen3-4B-GGUF:Q4_K_M]

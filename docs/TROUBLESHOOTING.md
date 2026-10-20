@@ -98,7 +98,7 @@ programs.aurora-assistant = {
     threshold = 0.95;
   };
   safety.backend = "kev";
-  diagnostics.logContent = true; # Opt in to transcripts, replies and model text.
+  diagnostics.logContent = true; # Opt in to transcripts, replies, model text and exception messages.
   presentation = {
     resultSeconds = 6;
     errorSeconds = 10;
@@ -192,3 +192,40 @@ the model threshold. An opened stream with no first-audio event means the first
 read has not completed. These distinctions must be checked before changing
 thresholds or selecting another microphone. Overflow counts indicate lost
 older samples; the returned block is still processed.
+
+
+## ValueError review (2026-10-20)
+
+The original user-reported ValueError has not been attributed without its trace.
+A source review against the pinned llama.cpp v0.7.0 found these concrete issues:
+
+* Completion JSON envelopes were indexed before validation. Invalid outer JSON,
+  an empty choices list or a missing message could bypass the bounded plan-repair
+  path. They now become a static `PlanValidationError` before any action executes.
+* Kev responses must now contain exactly the requested question IDs. Broken
+  envelopes fail at the inference boundary rather than later dictionary access.
+* Desktop exceptions were wrapped for D-Bus without logging their original stack.
+  `desktop.service.failed` now records it before wrapping. Static plan-validation
+  reasons are included by default. Arbitrary exception messages remain opt-in with
+  `diagnostics.logContent`, and are excluded from the recent-event socket buffer.
+* Context capacity and logical batch capacity are separate in the pinned server.
+  Its decision output positions must fit within one logical batch; the default
+  batch size is 2048. The managed Kev preset now sets `batch-size` equal to its
+  context size. Physical microbatch size is unchanged. This addresses a catalog
+  size failure path, not a confirmed cause of the earlier ValueError.
+
+The reviewed source is [server-context.cpp at v0.7.0](https://github.com/ggml-org/llama.cpp/blob/v0.7.0/tools/server/server-context.cpp),
+particularly `can_split()` and the decision output batch-size guard. External
+servers need equivalent configuration. This does not assert that non-causal
+replacement models can split their prompts in the same way as Kev.
+
+The [upstream decision API documentation](https://huggingface.co/blog/ggml-org/decision-models-in-llamacpp)
+confirms the `choice`/`probabilities` and `noul` response shapes. Aurora thresholds
+use the selected option probability, not the separate `confidence` field. A 0.95
+threshold is a policy default, not a calibrated accuracy guarantee. Published
+millisecond timings use an NVIDIA RTX PRO 6000 and do not establish CPU latency.
+Nested decisions add work; caching alone does not prove a speedup.
+
+Regression tests use mocked inference and desktop effects. The original runtime
+cause, real model semantics, actual cache reuse, host performance, and NixOS build
+remain unverified. No new recording or cloud service is required by these fixes.

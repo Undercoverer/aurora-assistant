@@ -94,6 +94,8 @@ class DesktopService(ServiceInterface):
                 raise ValueError('Unknown desktop read topic')
             return json.dumps(await self.desktop.read(Action('desktop_read', topic)))
         except Exception as exc:
+            from .telemetry import failure
+            failure('desktop.service.failed', exc)
             raise DBusError('org.aurora.Desktop.Error', str(exc)) from exc
 
     @method()
@@ -123,6 +125,8 @@ class DesktopService(ServiceInterface):
             self.pending[token] = (now + 120, plan)
             return json.dumps({'token': token, 'plan': plan, 'expires_at': now + 120})
         except Exception as exc:
+            from .telemetry import failure
+            failure('desktop.service.failed', exc)
             raise DBusError('org.aurora.Desktop.Error', str(exc)) from exc
 
     @method()
@@ -145,6 +149,8 @@ class DesktopService(ServiceInterface):
                 return f'Requested {desktop_id} to open.'
             return await self.desktop.execute(plan)
         except Exception as exc:
+            from .telemetry import failure
+            failure('desktop.service.failed', exc)
             raise DBusError('org.aurora.Desktop.Error', str(exc)) from exc
 
 

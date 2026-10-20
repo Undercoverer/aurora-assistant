@@ -36,7 +36,13 @@ class Kev:
                 timeout=self.config.get('timeoutSeconds', 10),
                 json={'model': self.config.get('model', MODEL), 'state': state, 'questions': questions})
             response.raise_for_status()
-            return response.json()['answers']
+            try:
+                answers = response.json()['answers']
+            except (ValueError, KeyError, TypeError) as exc:
+                raise ValueError('Invalid decision response envelope') from exc
+            if type(answers) is not dict or set(answers) != set(questions):
+                raise ValueError('Decision response does not match the requested questions')
+            return answers
 
     async def ready(self):
         result = await self.decide('Startup check. No actions will execute.', {

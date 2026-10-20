@@ -31,7 +31,7 @@ def event(name, **fields):
         'turn': turn_id.get(), 'event': name, **fields}
     # Independent of journal capture and third-party logging configuration.
     # Keep only small metadata rows; never copy transcript content into this buffer.
-    recent = {key: value for key, value in row.items() if key != 'text'}
+    recent = {key: value for key, value in row.items() if key not in {'text', 'error_message'}}
     if len(json.dumps(recent).encode()) > 1536:
         recent = {key: row[key] for key in ('time', 'pid', 'turn', 'event')}
         recent['detail_omitted'] = True
@@ -48,6 +48,13 @@ def snapshot():
 def failure(name, exc, **fields):
     response = getattr(exc, 'response', None)
     status = getattr(response, 'status_code', None)
+    # Only static validation reasons are safe without content logging. Arbitrary
+    # exception messages can contain model output, URLs, or private D-Bus values.
+    from .actions import PlanValidationError
+    if isinstance(exc, PlanValidationError):
+        fields['validation_reason'] = str(exc)[:256]
+    if log_content:
+        fields['error_message'] = str(exc)[:1000]
     event(name, error_type=type(exc).__name__,
           frames=[f'{os.path.basename(f.filename)}:{f.lineno}:{f.name}'
                   for f in traceback.extract_tb(exc.__traceback__)[-8:]],
