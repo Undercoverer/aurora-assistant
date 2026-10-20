@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from .actions import validate
-from .telemetry import phase, content, new_turn, turn_id, failure
+from .telemetry import phase, content, new_turn, turn_id, failure, duration
 
 
 class Controller:
@@ -48,7 +48,7 @@ class Controller:
             token = new_turn()
             try:
                 content("transcript.final", text)
-                with phase("turn"):
+                with phase("turn"), duration("turn.end_to_end_ms", boundary="controller_lifecycle"):
                     if self.follow_up and text.strip():
                         self.context.append({'user': text})
                         import json
@@ -76,7 +76,7 @@ class Controller:
         try:
             await self.overlay.state("thinking")
             if self.agent:
-                with phase("agent"):
+                with phase("agent"), duration("turn.processing_ms", boundary="agent_run"):
                     async with asyncio.timeout(self.presentation.get("agentTimeoutSeconds", 60)):
                         reply = await self.agent.run(text)
                 failed = self.agent.failed
