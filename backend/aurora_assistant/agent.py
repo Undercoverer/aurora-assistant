@@ -15,6 +15,9 @@ class SettingsAgent:
     async def run(self, text):
         self.failed = False
         self.awaiting_reply = False
+        if len(text) > 8192:
+            self.failed = True
+            return 'The request is too long to process safely. Please shorten it. No actions were run.'
         evidence = []
         kev = self.config.get('kev', {})
         kev_active = kev.get('enable', False)
@@ -117,18 +120,15 @@ class SettingsAgent:
 
     async def _review(self, text, prepared):
         review = {'decision': 'allow', 'reason': 'Local policy permits the supported desktop actions.'}
-        # An exact, completely parsed request for known reversible controls is
-        # already explicit authorization. Never extend this to generic D-Bus.
-        from .kev import common_plan
-        candidate = common_plan(text)
+        # Policy is based on validated capabilities, not the wording used to
+        # request them. Generic D-Bus never inherits routine adapter privileges.
         routine = {'volume', 'mute', 'microphone_mute', 'media', 'open_url'}
         actual = [p.get('action') for p in prepared]
-        if (candidate and actual and all(a and a.get('name') in routine for a in actual)
+        if (actual and all(a and a.get('name') in routine for a in actual)
                 and not any(p.get('requires_approval', True) for p in prepared)):
-            expected = sorted(candidate['actions'], key=lambda a: a['name'] == 'microphone_mute' and a['argument'] is True)
-            if actual == expected:
-                event('review.local', policy='explicit_routine_actions')
-                return review
+            validate({'actions': actual, 'reply': ''}, self.config['apps'], settings=True)
+            event('review.local', policy='routine_capabilities')
+            return review
         if self.config.get('safety', {}).get('enable', True):
             try:
                 review = await self.inference.review(text, prepared)

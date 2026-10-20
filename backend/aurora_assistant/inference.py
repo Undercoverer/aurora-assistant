@@ -12,6 +12,7 @@ class Inference:
         self.config = config
         from .catalog import CapabilityCatalog
         self.catalog = CapabilityCatalog()
+        self.capability_source = None
         # Do not inherit HTTP proxies or follow redirects to a remote service.
         self.http = httpx.AsyncClient(timeout=90, trust_env=False, follow_redirects=False)
 
@@ -105,6 +106,7 @@ class Inference:
         raise RuntimeError("Local inference services are not ready")
 
     async def plan(self, text, evidence=None):
+        await self.refresh_capabilities()
         c = self.config["llm"]
         retrieved = self.catalog.search(text)
         evidence = [*(evidence or []), *([{'capability_documents': retrieved}] if retrieved else [])]
@@ -144,7 +146,19 @@ class Inference:
 
     async def quick_plan(self, text, evidence=None):
         from .kev import Kev
-        return await Kev(self.config.get('kev', {}), self.request).route(text, evidence, self.catalog.search(text))
+        await self.refresh_capabilities()
+        return await Kev(self.config.get('kev', {}), self.request).route(text, evidence, self.catalog.routing_documents(text))
+
+    async def refresh_capabilities(self):
+        if self.capability_source is None:
+            return
+        try:
+            async with asyncio.timeout(3):
+                self.catalog.advertise(await self.capability_source())
+        except Exception as exc:
+            self.catalog.adapter = None
+            from .telemetry import failure
+            failure('capabilities.refresh_failed', exc)
 
     async def summarize_search(self, question, results):
         """Tool-free summary; source links are selected by ID, never generated."""

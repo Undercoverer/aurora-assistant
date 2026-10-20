@@ -23,6 +23,11 @@ async def stop_visuals(controller, task):
     await asyncio.gather(task, return_exceptions=True)
 
 
+async def stop_task(task):
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+
+
 async def show_service_failure(overlay, seconds, exc_type, exc, traceback):
     if exc is None or isinstance(exc, asyncio.CancelledError):
         return False
@@ -53,6 +58,7 @@ async def run(config, text=None):
         cleanup.push_async_callback(approval.close)
         controller.agent = SettingsAgent(config, inference,
             RemoteDesktop(BusAccess(config.get("settings", {})), executor), approval, overlay)
+        inference.capability_source = controller.agent.desktop.describe
         voice = None
         await approval.start()
         cleanup.push_async_callback(overlay.reset)
@@ -64,6 +70,10 @@ async def run(config, text=None):
         await overlay.message('Starting local services and loading voice models…')
         with phase("services.ready"):
             await inference.wait_ready()
+        from .discovery import maintain
+        discovery = asyncio.create_task(maintain(inference, controller.agent.desktop.bus,
+                                                config.get('settings', {}).get('enable', True)))
+        cleanup.push_async_callback(stop_task, discovery)
         if text is not None:
             await controller.handle(text)
             return

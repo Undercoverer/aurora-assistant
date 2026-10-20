@@ -24,6 +24,11 @@ def schema(apps, dbus_actions=None, settings=False, web_search=False):
     variants = [variant("volume", {"type": "integer", "minimum": 0, "maximum": 100}),
                 variant("mute", {"type": "boolean"}),
                 variant("media", {"enum": ["play", "pause", "play-pause", "next", "previous"]})]
+    for item, description in zip(variants, (
+            'Set the default speaker volume to an absolute integer percentage from 0 to 100. This is not a relative adjustment.',
+            'Set default speaker mute: true silences computer output, false restores it.',
+            'Control a uniquely identified media player: play, pause, toggle playback, next track, or previous track.')):
+        item['description'] = description
     if settings:
         from .settings import action_schemas
         variants.extend(action_schemas())

@@ -2,24 +2,13 @@ import asyncio
 import json
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
-from aurora_assistant.kev import Kev, common_plan
+from aurora_assistant.kev import Kev
 from aurora_assistant.controller import Controller
 from aurora_assistant.portal import valid_url, open_url
 from aurora_assistant import telemetry
 
 
 class CandidateTests(unittest.TestCase):
-    def test_volume_and_multiple_actions(self):
-        self.assertEqual(common_plan('raise the volume to 12')['actions'], [{'name': 'volume', 'argument': 12}])
-        self.assertEqual(len(common_plan('mute the microphone and pause playback')['actions']), 2)
-        self.assertEqual(common_plan('open youtube')['actions'][0]['argument'], 'https://www.youtube.com/')
-
-    def test_unknown_and_partial_requests_escalate(self):
-        for text in ('Hope in youtube', 'raise the volume by 12', 'raise the volume to 200',
-                     'mute the speakers and delete files', 'do not mute the speakers', 'set volume to -12'):
-            with self.subTest(text=text):
-                self.assertIsNone(common_plan(text))
-
     def test_browser_url_validation(self):
         self.assertTrue(valid_url('https://www.youtube.com/'))
         for value in ('file:///etc/passwd', 'javascript:alert(1)', 'https://user:pass@host.org',
@@ -31,9 +20,9 @@ class DecisionTests(unittest.IsolatedAsyncioTestCase):
     async def test_bad_probabilities_never_authorize(self):
         kev = Kev({}, AsyncMock())
         for value in (True, float('nan'), -1, 2):
-            kev.decide = AsyncMock(return_value={'route': {'choice': 'apply', 'probabilities': {'apply': value, 'escalate': 0}}})
+            kev.decide = AsyncMock(return_value={'capability': {'choice': '0', 'probabilities': {'0': value, 'escalate': 0}}})
             with self.subTest(value=value), self.assertRaises(ValueError):
-                await kev.route('mute the speakers')
+                await kev.route('mute the speakers', documents=[{'candidate': {'name': 'mute', 'argument': True}}])
 
     async def test_review_uses_noul_and_low_score_requires_approval(self):
         kev = Kev({}, AsyncMock())

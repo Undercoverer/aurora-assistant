@@ -14,7 +14,8 @@ let
   routerPreset = pkgs.writeText "aurora-llama-models.ini" ("version = 1\n" + lib.generators.toINI {} (
     { "*" = { parallel = 1; sleep-idle-seconds = -1; }; }
     // lib.optionalAttrs managedKev {
-      "${kevAlias}" = { model = cfg.kev.modelFile; ctx-size = 8192;
+      "${kevAlias}" = { model = cfg.kev.modelFile; ctx-size = cfg.kev.contextSize;
+        cache-ram = cfg.kev.cacheRamMiB;
         n-gpu-layers = cfg.kev.gpuLayers; load-on-startup = true; };
     }
     // lib.optionalAttrs managedPlanner {
@@ -39,7 +40,7 @@ let
     dbus_actions = cfg.dbusActions;
     settings = { enable = true; sessionPrefixes = cfg.settings.sessionPrefixes;
       systemPrefixes = cfg.settings.systemPrefixes; maxRounds = cfg.settings.maxRounds; };
-    kev = { inherit (cfg.kev) enable url threshold timeoutSeconds maxRounds announceEscalation escalationMessage; model = kevAlias; };
+    kev = { inherit (cfg.kev) enable url threshold timeoutSeconds maxRounds announceEscalation escalationMessage contextSize; model = kevAlias; };
     safety = { inherit (cfg.safety) enable backend; model = if managedPlanner && cfg.safety.model == cfg.planner.model then plannerAlias else cfg.safety.model; };
     diagnostics = { inherit (cfg.diagnostics) logContent; };
     presentation = { inherit (cfg.presentation) resultSeconds errorSeconds agentTimeoutSeconds; };
@@ -198,6 +199,10 @@ in {
       description = "Local Kev GGUF path. Normal operation never downloads model files."; };
     kev.gpuLayers = lib.mkOption { type = types.ints.unsigned; default = 0;
       description = "Layers offloaded by llama.cpp. Zero selects CPU; use a GPU-enabled inferencePackage before increasing this."; };
+    kev.contextSize = lib.mkOption { type = types.ints.between 4096 65536; default = 32768;
+      description = "Managed Kev context capacity in tokens, including capability state and decision questions. Longer accepted contexts do not guarantee equivalent accuracy; upstream Kev-4B validation reports 8192 tokens. Also used for client request budgeting."; };
+    kev.cacheRamMiB = lib.mkOption { type = types.ints.unsigned; default = 512;
+      description = "Explicit llama.cpp decision-model prompt-cache budget in MiB. Zero disables it. Stable capability prefixes enable reuse; changed D-Bus descriptions invalidate their prefix naturally. Cache savings require target-host measurement."; };
     kev.timeoutSeconds = lib.mkOption { type = types.numbers.between 1 60; default = 10;
       description = "Deadline for each Kev decision; routing timeout escalates and review timeout requires approval."; };
     kev.threshold = lib.mkOption { type = types.numbers.between 0.5 1; default = 0.95;
@@ -217,7 +222,7 @@ in {
     safety.backend = lib.mkOption { type = types.enum [ "kev" "planner" ]; default = if cfg.kev.enable then "kev" else "planner";
       description = "Use Kev's noul decision for review, or the planner model in a separate tool-free chat context. Neither bypasses deterministic approval requirements."; };
     safety.enable = lib.mkOption { type = types.bool; default = true;
-      description = "Review plans not covered by exact, explicitly requested routine actions with a separate local model context. Generic D-Bus mutations still require human approval; routine policy cannot override an adapter approval requirement."; };
+      description = "Review plans outside the validated routine capability policy with a separate local model context. Policy is independent of request wording. Generic D-Bus mutations still require human approval; routine policy cannot override an adapter approval requirement."; };
     safety.model = lib.mkOption {
       description = "Model alias used in a separate tool-free review context. With the managed single-model server this must match planner.model. Review does not replace deterministic approval rules."; type = types.str; default = cfg.planner.model; };
     settings.sessionPrefixes = lib.mkOption {

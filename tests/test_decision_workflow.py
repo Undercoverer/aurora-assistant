@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock, patch
 from aurora_assistant.actions import Action, validate, PlanValidationError
 from aurora_assistant.agent import SettingsAgent
 from aurora_assistant.catalog import CapabilityCatalog
-from aurora_assistant.candidates import desktop_candidates
+from aurora_assistant.candidates import finite_values
 from aurora_assistant.desktop_bus import DesktopService
-from aurora_assistant.kev import Kev, common_plan
+from aurora_assistant.kev import Kev
 from test_desktop_bus import invoke
 
 
@@ -32,7 +32,7 @@ class DecisionWorkflowTests(unittest.IsolatedAsyncioTestCase):
             clock.now.return_value.astimezone.return_value = fixed
             clock_data = json.loads(await invoke(service, 'Read', 'clock'))
         agent = self.agent()
-        agent.inference.quick_plan.return_value = common_plan('What time is it?')
+        agent.inference.quick_plan.return_value = plan('desktop_read', 'clock')
         agent.desktop.read.return_value = clock_data
         self.assertEqual(await agent.run('What time is it?'), clock_data['reply'])
         self.assertIn('09:30', clock_data['reply'])
@@ -42,10 +42,10 @@ class DecisionWorkflowTests(unittest.IsolatedAsyncioTestCase):
         agent.approval.request.assert_not_awaited()
 
     async def test_exact_mute_volume_youtube_skip_redundant_model_review(self):
-        for request in ('Mute the computer', 'set volume to 12', 'open youtube'):
+        for request, name, argument in (('Silence the machine', 'mute', True), ('Make it twelve percent loud', 'volume', 12), ('Show that web page', 'open_url', 'https://example.org/')):
             with self.subTest(request=request):
                 agent = self.agent()
-                selected = common_plan(request)
+                selected = plan(name, argument)
                 agent.inference.quick_plan.return_value = selected
                 agent.desktop.prepare.return_value = {
                     'action': selected['actions'][0], 'requires_approval': False}
@@ -84,33 +84,6 @@ class DecisionWorkflowTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(agent.inference.plan.await_count, 2)
         agent.desktop.prepare.assert_not_awaited()
         agent.desktop.execute.assert_not_awaited()
-
-    async def test_semantic_selection_uses_supplied_candidate_not_generated_arguments(self):
-        kev = Kev({}, AsyncMock())
-        async def choose(state, questions):
-            criteria = questions['capability']['criteria']
-            selected = next(k for k, v in criteria.items() if 'exactly 12 percent' in v)
-            return {'capability': {'choice': selected, 'probabilities': {
-                k: .99 if k == selected else .01 if k == 'escalate' else 0 for k in criteria}}}
-        kev.decide = AsyncMock(side_effect=choose)
-        self.assertEqual(await kev.route('Make the speakers 12 percent loud'), plan('volume', 12))
-        self.assertEqual(kev.decide.await_count, 1)
-
-    async def test_uncertain_multi_action_selection_escalates_without_partial_plan(self):
-        kev = Kev({}, AsyncMock())
-        async def choose(state, questions):
-            return {'capability': {'choice': 'escalate', 'probabilities': {
-                k: float(k == 'escalate') for k in questions['capability']['criteria']}}}
-        kev.decide = AsyncMock(side_effect=choose)
-        self.assertIsNone(await kev.route('open youtube and delete my documents'))
-
-    def test_candidate_values_are_bounded_and_typed(self):
-        for request in ('volume 200', 'volume -12', 'volume 12.5', 'volume 12'):
-            docs = desktop_candidates(request)
-            for doc in docs:
-                validate({'actions': [doc['candidate']], 'reply': ''}, {}, settings=True)
-            values = [d['candidate']['argument'] for d in docs if d['candidate']['name'] == 'volume']
-            self.assertEqual(values, [12] if request == 'volume 12' else [])
 
     def test_observed_apps_and_boolean_properties_become_choices(self):
         catalog = CapabilityCatalog()

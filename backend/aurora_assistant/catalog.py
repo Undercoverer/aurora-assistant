@@ -13,6 +13,39 @@ def words(text):
 class CapabilityCatalog:
     def __init__(self):
         self.objects = {}
+        self.adapter = None
+
+    def advertise(self, snapshot):
+        """Replace the live adapter schema atomically; reject malformed metadata."""
+        self.adapter = None
+        if type(snapshot) is not dict or set(snapshot) != {'source', 'description'}:
+            raise ValueError('Invalid capability snapshot')
+        source, description = snapshot['source'], snapshot['description']
+        if (type(source) is not dict or set(source) != {'bus', 'destination', 'path', 'interface', 'owner'}
+                or any(type(v) is not str or not v or len(v) > 512 for v in source.values())
+                or type(description) is not dict or type(description.get('version')) is not int
+                or description['version'] != 1
+                or type(description.get('actions')) is not list or len(description['actions']) > 32
+                or len(json.dumps(snapshot).encode()) > 65536):
+            raise ValueError('Invalid capability description')
+        seen = set()
+        for entry in description['actions']:
+            if (type(entry) is not dict or set(entry) != {'name', 'description', 'argument'}
+                    or type(entry['name']) is not str or not entry['name'] or len(entry['name']) > 128
+                    or entry['name'] in seen or type(entry['description']) is not str
+                    or len(entry['description']) > 1024 or type(entry['argument']) is not dict):
+                raise ValueError('Invalid advertised action schema')
+            seen.add(entry['name'])
+        self.adapter = (time.monotonic(), copy.deepcopy(snapshot))
+
+    def advertised(self):
+        if self.adapter is None or time.monotonic() - self.adapter[0] > 300:
+            return []
+        snapshot = self.adapter[1]
+        return [{'target': snapshot['source'], 'kind': 'advertised action', 'name': entry['name'],
+                 'detail': {'argument': entry['argument']}, 'description': entry['description'],
+                 'binding': {'name': entry['name'], 'argument': entry['argument']}}
+                for entry in copy.deepcopy(snapshot['description']['actions'])]
 
     def observe(self, action, value):
         if action.name == 'desktop_read' and action.argument in {'applications', 'themes', 'colors'}:
@@ -34,7 +67,7 @@ class CapabilityCatalog:
             self.objects.pop(next(iter(self.objects)))
 
     def documents(self):
-        docs = []
+        docs = self.advertised()
         now = time.monotonic()
         for observed, endpoint, value in list(self.objects.values()):
             if now - observed > 300:
@@ -79,11 +112,17 @@ class CapabilityCatalog:
 
     def search(self, query, limit=12):
         terms = words(query)
-        # Cheap lexical retrieval; Kev performs semantic selection over the shortlist.
+        # A small lexical context supplement for the generative planner.
         docs = self.documents()
         def score(doc):
             return len(terms & words(json.dumps(doc)))
         return sorted(docs, key=score, reverse=True)[:limit]
+
+    def routing_documents(self, query):
+        # Stable ordering preserves the cacheable capability prefix and gives
+        # synonyms the same available tools. Kev supports 255 choices including
+        # the explicit escalation option. Query text never filters capabilities.
+        return sorted(self.documents(), key=lambda doc: json.dumps(doc, sort_keys=True))[:254]
 
     def markdown(self):
         lines = ['# Observed D-Bus capabilities', '',
@@ -91,5 +130,6 @@ class CapabilityCatalog:
         for doc in self.documents():
             target = doc['target']
             lines.extend([f"## {doc['kind']}: {doc['name']}", '',
+                doc.get('description', ''), '',
                 '```json', json.dumps({**target, **doc['detail']}, ensure_ascii=True, indent=2), '```', ''])
         return '\n'.join(lines)[:90000]

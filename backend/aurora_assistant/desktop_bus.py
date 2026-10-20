@@ -16,7 +16,7 @@ from dbus_next import DBusError
 from dbus_next.aio import MessageBus
 from dbus_next.constants import NameFlag, RequestNameReply
 from dbus_next.service import ServiceInterface, method
-from .actions import Action, Executor, validate
+from .actions import Action, Executor, validate, schema
 from .config import load
 from .settings import BusAccess, DesktopSettings
 from .native_media import NativeMedia
@@ -24,6 +24,8 @@ from .native_media import NativeMedia
 NAME = 'org.aurora.Desktop'
 PATH = '/org/aurora/Desktop'
 INTERFACE = 'org.aurora.Desktop1'
+DESKTOP_ACTIONS = {'volume', 'mute', 'microphone_mute', 'media', 'theme', 'color_scheme',
+                   'open_app', 'launch_app', 'open_url'}
 
 
 def applications():
@@ -66,6 +68,16 @@ class DesktopService(ServiceInterface):
         self.pending = {}
 
     @method()
+    def Describe(self) -> 's':
+        """Advertise supported tools and argument schemas; no request matching."""
+        variants = schema(self.config['apps'], settings=True)['properties']['actions']['items']['anyOf']
+        return json.dumps({'version': 1, 'actions': [
+            {'name': v['properties']['name']['const'],
+             'description': v.get('description', v['properties']['name']['const']),
+             'argument': v['properties']['argument']}
+            for v in variants if v['properties']['name']['const'] in DESKTOP_ACTIONS | {'desktop_read'}]})
+
+    @method()
     async def Read(self, topic: 's') -> 's':
         """Read the clock, audio, media, themes/colors, or application IDs as JSON."""
         try:
@@ -88,7 +100,7 @@ class DesktopService(ServiceInterface):
     async def Prepare(self, name: 's', argument_json: 's') -> 's':
         """Validate one desktop action and store its exact plan for 120 seconds."""
         try:
-            if len(argument_json) > 4096 or name not in {'volume', 'mute', 'microphone_mute', 'media', 'theme', 'color_scheme', 'open_app', 'launch_app', 'open_url'}:
+            if len(argument_json) > 4096 or name not in DESKTOP_ACTIONS:
                 raise ValueError('Unsupported desktop action')
             actions, _ = validate({'actions': [{'name': name, 'argument': json.loads(argument_json)}], 'reply': ''}, self.config['apps'], settings=True)
             action = actions[0]
@@ -141,6 +153,17 @@ class RemoteDesktop:
     def __init__(self, bus, executor):
         self.bus, self.executor = bus, executor
         self.media = NativeMedia(bus)
+        self.observed_owner = None
+
+    async def describe(self):
+        owner = await self.owner()
+        raw = (await self.bus.call('session', owner, PATH, INTERFACE, 'Describe'))[0]
+        if type(raw) is not str or len(raw.encode()) > 65536:
+            raise ValueError('Desktop capability description exceeds size limit')
+        value = json.loads(raw)
+        self.observed_owner = owner
+        return {'source': {'bus': 'session', 'destination': NAME, 'path': PATH,
+                           'interface': INTERFACE, 'owner': owner}, 'description': value}
 
     async def owner(self):
         return (await self.bus.call('session', 'org.freedesktop.DBus', '/org/freedesktop/DBus', 'org.freedesktop.DBus', 'GetNameOwner', 's', [NAME]))[0]
@@ -161,6 +184,8 @@ class RemoteDesktop:
             return {'action': {'name': action.name, 'argument': action.argument}, 'requires_approval': True,
                     'configured_call': self.executor.dbus_actions.registry[action.argument]}
         owner = await self.owner()
+        if self.observed_owner is not None and owner != self.observed_owner:
+            raise RuntimeError('Desktop capabilities changed owner; refresh discovery before preparing')
         reply = json.loads((await self.bus.call('session', owner, PATH, INTERFACE, 'Prepare', 'ss', [action.name, json.dumps(action.argument)]))[0])
         return {**reply['plan'], 'desktop_owner': owner, 'desktop_token': reply['token'],
                 'expires_at': reply['expires_at']}

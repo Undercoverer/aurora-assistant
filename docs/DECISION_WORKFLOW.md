@@ -1,109 +1,105 @@
-# Decision workflow: Kev, Qwen, and desktop tools
-
-## What the upstream designs mean for Aurora
-
-[TypeSafe's System One documentation](https://docs.typesafe.ai/concepts/system-one)
-describes typed decisions over supplied state, with probabilities rather than
-generated text. Confidence is not a guarantee of correctness.
-[llama.cpp's decision-model guide](https://huggingface.co/blog/ggml-org/decision-models-in-llamacpp)
-provides native Kev through `/v1/systemone`, with `choice`, `noul`, and `score`.
-Aurora already uses that endpoint and the actual Kev-4B GGUF.
-
-The [Jev Ultrafast reference implementation](https://github.com/browser-use/jev-ultrafast)
-builds choices from observed controls, checks the selected target, and uses a
-text model only when text generation is necessary. Aurora applies this idea to
-typed desktop actions and observed D-Bus interfaces. It does not use the hosted
-Jev service, browser automation, or that project's cloud text provider.
+# Kev decision waterfall
 
 ## Request flow
 
-1. STT finalizes the request. Kev receives the request and concrete choices.
-2. Exact supported clauses can produce a complete multi-action candidate. Kev
-   checks that candidate against the entire request.
-3. Other requests get a bounded menu of supported operations plus recently
-   observed capabilities. Available choices include speaker/microphone mute,
-   playback, local clock, audio state, YouTube, and absolute volume values found
-   as integer digits in the request. Observed application IDs, themes, colors,
-   readable properties, boolean property values, and zero-argument methods can
-   also become choices.
-4. Low confidence, missing arguments, and unsupported multi-action combinations
-   go to Qwen. Qwen can request discovery, synthesize typed arguments, or ask a
-   clarification. It cannot supply shell code.
-5. The controller validates the complete plan. Invalid JSON or invalid action
-   fields get one correction attempt, within the existing round/time limits.
-   Nothing from an invalid plan executes. A second invalid plan produces an
-   explicit failure, and the report includes the static validation reason.
-6. The desktop service checks live targets and prepares the operations. Policy
-   and, when needed, model review determine whether approval is required.
-7. Execution uses the prepared targets and existing readback checks. Replies
-   about completed changes come from executor results, not a generated claim.
+Aurora uses the actual [Kev model](https://huggingface.co/ggml-org/Kev-4B-GGUF)
+through llama.cpp's `/v1/systemone`. Like the
+[Jev reference](https://github.com/browser-use/jev-ultrafast), it separates selecting
+observed controls from generating text. No hosted Jev service is used.
 
-Kev does not invent new arguments, retrieve the current time from its weights,
-or know every D-Bus interface without discovery. Candidate retrieval is lexical;
-Kev performs semantic selection on the shortlist. The catalog is session-local,
-bounded, and expires after five minutes. It is not a complete index of Plasma.
+1. Read `org.aurora.Desktop1.Describe` over D-Bus for live action descriptions and
+   argument schemas. Native introspection adds observed methods and properties.
+2. Supply a stable catalog, independent of request wording. With more than 32
+   actionable documents across multiple interface groups, Kev first chooses a group.
+3. Kev chooses one operation covering the entire request. Negation, conditions,
+   uncertainty and multiple operations must trigger escalation.
+4. Derive finite argument choices from the advertised schema: constants, booleans,
+   enums or bounded integer ranges of at most 128 values. Kev selects the value
+   semantically. Volume supplies all values 0–100; number words need no parser.
+5. Each stage requires a valid probability distribution and a unique winner above
+   `kev.threshold`. Unknown indices, uncertainty, malformed responses or free-form
+   arguments hand off to Qwen. No intermediate stage executes anything.
+6. Qwen handles free-form arguments, multiple actions, further discovery and
+   clarification. The complete plan passes typed validation. Invalid plans get one
+   correction attempt within the existing turn limits.
+7. Prepare live targets, apply local policy and safety review, then execute approved
+   actions with existing owner checks and readback. Completion replies use results.
 
-## Examples and approval behavior
+This is bounded to three routing decisions, not recursive execution. There are no
+hardcoded request phrases, digit extraction or predefined website candidates in
+this routing path. Multi-action requests remain supported through Qwen.
 
-| Request | Tool path | Approval behavior |
-| --- | --- | --- |
-| What time is it? | `desktop_read clock`, through `org.aurora.Desktop1.Read` | Read only; returns the current local clock response directly |
-| Mute the computer | `mute true`, prepared by the desktop adapter | Exact routine request uses local policy |
-| Set volume to 12 | `volume 12` | Exact routine request uses local policy |
-| Open YouTube | `open_url https://www.youtube.com/`, desktop portal | Exact routine request uses local policy |
-| Mute the microphone and pause playback | Complete two-action candidate | Exact routine policy; microphone mute executes last |
-| Make the speakers 12 percent loud | Kev selects a supplied absolute-volume candidate, or Qwen handles uncertainty | Model review if it is not an exact parsed routine request |
-| Use Breeze Dark | Discover installed theme/color IDs, then select an actual ID | Model review; no invented theme identifier |
-| Change an unfamiliar D-Bus property | Inspect, prepare a typed change, review | Local approval remains required |
+## Examples
 
-The clock response comes from `datetime.now().astimezone()` in the desktop
-service. The controller reads it over D-Bus. It uses the host's configured time
-zone and does not claim to check internet time accuracy.
+These are intended paths, not a claim of measured model accuracy.
 
-Routine policy applies only if every prepared action exactly matches the
-complete recognized user request, all actions belong to the supported routine
-set, and no adapter requires approval. It does not approve generic D-Bus calls,
-unknown settings, or partially understood requests. Model confidence cannot
-override those rules. A local approval request is not root privilege escalation.
+| Request | Available path |
+| --- | --- |
+| What time is it? | Advertised `desktop_read clock`, returning the actual host clock over D-Bus |
+| Silence the speakers | Advertised `mute`, then boolean selection |
+| Make the loudness twelve percent | Advertised `volume`, then selection from 0–100 |
+| Open YouTube | Advertised `open_url`; Qwen generates the URL, followed by validation and portal opening |
+| Mute the microphone and pause playback | Qwen prepares two actions; microphone mute executes last |
+| Use Breeze Dark | Discover installed theme/color IDs, then select an observed ID |
 
-Controller-to-desktop communication uses D-Bus. Media and URL opening use native
-MPRIS/portal calls. Some adapter implementations still use fixed `wpctl` or KDE
-commands internally; this release does not claim every operation is a native
-KDE D-Bus method. There is no unrestricted shell tool.
+Routine policy accepts validated prepared volume/mute, microphone mute, media and
+URL actions when no adapter requires approval. It is wording-independent and trusts
+the validated plan's interpretation; it is not an independent proof of intent.
+Generic D-Bus mutations still require approval. Confidence cannot override adapter
+approval requirements. Local approval is not root privilege escalation.
 
-## Configuration and troubleshooting
+Controller-to-desktop calls use D-Bus. MPRIS and portal operations are native D-Bus.
+Some adapter operations still invoke fixed `wpctl` or KDE commands internally.
+There is no unrestricted shell tool, nor a claim that every setting has a native
+KDE D-Bus method.
+
+## Context and cache
 
 ```nix
 programs.aurora-assistant = {
   enable = true;
-  user = "foxkj";
-  models.wakeWord = "alexa"; # Built-in trained phrase; unrelated to Kev.
-  kev.model = "hf.co/ggml-org/Kev-4B-GGUF:Q4_K_M";
-  kev.threshold = 0.95;
+  user = "foxkj"; # Existing Plasma account.
+  models.wakeWord = "alexa";
+  kev = {
+    model = "hf.co/ggml-org/Kev-4B-GGUF:Q4_K_M";
+    contextSize = 32768;
+    cacheRamMiB = 512; # Explicit decision prompt-cache opt-in; 0 disables.
+    threshold = 0.95;
+  };
   safety.backend = "kev";
   planner.model = "hf.co/Qwen/Qwen3-4B-GGUF:Q4_K_M";
 };
 ```
 
-After one failed request, collect diagnostics before restarting:
+All stages reuse the same state string: sorted catalog, then observations, then
+user request. Stage-specific questions follow it. This enables prefix reuse without
+inventing an HTTP `cache_prompt` field for the decision endpoint. Changed state,
+eviction and backend behavior affect cache hits. External servers need their own
+context/cache configuration. Additional decisions add overhead; speedups have not
+been measured here.
+
+The [upstream card](https://huggingface.co/jaredpalmer/kev-4b) describes a served
+context larger than 32K but validation at 8K. Configuring 32K capacity does not prove
+equal accuracy at that length. Larger input uses the local tokenizer with a
+2,048-token template reserve; this is an estimate, and the server remains the
+final capacity check. Overflow escalates without truncating intent. Requests over
+8,192 characters are rejected before planning.
+
+## Diagnostics and validation
 
 ```sh
+aurora-control capabilities > aurora-capabilities.md
 aurora-report --since '10 minutes ago' --clipboard
-aurora-control capabilities
 ```
 
-`kev.route` and `kev.capability` show whether a candidate was accepted.
-`kev.route_failed` includes failure locations and HTTP status where available.
-`review.local` shows routine policy; `review.result` shows the resulting decision.
-`plan.invalid` gives a static validation reason without storing the request.
-A specific earlier ValueError cannot be attributed from the exception name
-alone; its event and stack location are needed. These changes improve recovery
-and diagnosis, but do not prove the cause of an earlier uncollected failure.
+`kev.decision` times each call; `kev.selection` records confidence/acceptance;
+`kev.escalate` identifies empty catalogs or generation requirements.
+`kev.route_failed` records failures. `capabilities.refresh_failed` means stale
+adapter metadata was cleared. `review.local` shows routine policy and
+`plan.invalid` shows static validation errors.
 
-## Validation limits
-
-Offline tests cover clock transport, semantic choice mapping, exact routine
-policy, approval preservation, plan correction, bounds, and catalog entries.
-They mock inference and desktop effects. They do not establish live model
-accuracy, latency on a particular CPU, or successful operation on every Plasma
-version. NixOS and live desktop validation remain target-host checks.
+Tests cover stable menus, nested index mapping, finite domains, malformed decisions,
+context overflow, stale metadata, approval preservation and plan correction.
+Inference is mocked: tests do not prove semantic accuracy or latency. Live D-Bus
+tests need an isolated session bus. NixOS, Plasma and actual Kev behavior need
+validation on the target host.

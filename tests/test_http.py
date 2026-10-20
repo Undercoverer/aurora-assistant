@@ -1,6 +1,7 @@
 import unittest
 import httpx
 from aurora_assistant.inference import Inference
+from aurora_assistant.actions import Action
 
 
 class LocalHTTPTests(unittest.IsolatedAsyncioTestCase):
@@ -46,22 +47,20 @@ class LocalHTTPTests(unittest.IsolatedAsyncioTestCase):
         client = Inference(config)
         await client.http.aclose()
         probabilities = [.5, .99]
+        client.catalog.observe(Action(
+            'dbus_inspect', {'bus': 'session', 'destination': 'org.example.Player', 'path': '/Player'}),
+            {'interfaces': [{'name': 'org.example.Player', 'methods': [{'name': 'Pause', 'input': '', 'output': ''}]}]})
         def respond(request):
             self.assertEqual(request.url.path, '/v1/systemone')
             data = json.loads(request.content)
             self.assertEqual(data['model'], MODEL)
             self.assertNotIn('messages', data)
-            if 'capability' in data['questions']:
-                options = data['questions']['capability']['criteria']
-                return httpx.Response(200, json={'answers': {'capability': {'choice': 'escalate',
-                    'probabilities': {k: float(k == 'escalate') for k in options}}}})
             score = probabilities.pop(0)
-            return httpx.Response(200, json={'answers': {'route': {'choice': 'apply',
-                'probabilities': {'apply': score, 'escalate': 1-score}}}})
+            return httpx.Response(200, json={'answers': {'capability': {'choice': '0',
+                'probabilities': {'0': score, 'escalate': 1-score}}}})
         client.http = httpx.AsyncClient(transport=httpx.MockTransport(respond))
         try:
-            self.assertIsNone(await client.quick_plan('raise the volume to 200'))
-            self.assertIsNone(await client.quick_plan('mute the speakers'))
-            self.assertEqual((await client.quick_plan('mute the speakers'))['actions'][0]['argument'], True)
+            self.assertIsNone(await client.quick_plan('stop playback for a moment'))
+            self.assertEqual((await client.quick_plan('stop playback for a moment'))['actions'][0]['argument']['method'], 'Pause')
         finally:
             await client.close()

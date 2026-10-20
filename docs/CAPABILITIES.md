@@ -1,42 +1,41 @@
-# Discovered D-Bus capabilities and Kev
+# Discovered D-Bus capabilities
 
-Aurora records interfaces returned by successful `dbus_inspect` actions. Each
-method or property becomes a document containing the bus, service, object path,
-interface, member, signature, and property access. No service names or signatures
-are invented. The cache contains at most 16 objects and exposes at most 256 member
-documents; observations expire after five minutes and disappear on restart.
-Reinspection replaces the complete object so removed members disappear.
+The controller reads `org.aurora.Desktop1.Describe` over the session bus. This
+versioned JSON description comes from the running desktop adapter's unique owner
+and advertises operations, descriptions and argument schemas. It is additive to
+the desktop service; the pinned overlay API is unchanged.
 
-A keyword search, including splitting CamelCase member names, retrieves at most
-12 documents. Kev then makes a semantic choice among concrete candidates, with
-an explicit escalation option. This is lexical retrieval with model reranking,
-not an embedding/vector index. No additional embedding model or service is needed.
-The larger planner receives the retrieved documents too.
+Read-only background discovery lists running services and follows observed child
+paths. Each sweep attempts at most 24 objects, considers at most 12 services per
+bus, and has a six-second budget. It runs every four minutes. Coverage is partial;
+the planner can inspect additional objects on demand. Generic discovery follows
+bus policy and is disabled when settings support is disabled.
 
-Kev may select a readable property or a method with no input arguments when one
-candidate covers the entire request. Observed writable boolean properties also
-offer exact true/false candidates, still subject to local approval. Successful
-desktop reads add installed application, theme and color IDs as typed candidates.
-A request needing other parameters, ambiguous
-semantics, multiple generic calls, or further discovery escalates. Kev does not
-invent parameter values. Common supported requests have separate fully parsed
-candidates, including multi-action requests such as "mute the speakers and pause
-playback". A confidence score is not proof of safety: all generic mutations still
-pass live introspection, typed validation, service-owner checking, and approval.
+Native introspection supplies bus, service, path, interface, member, signature and
+access. Application/theme/color reads supply installed IDs. Native observations
+retain at most 16 objects; the combined catalog exposes at most 256 documents.
+Entries expire after five minutes and are replaced on reinspection. Adapter
+metadata is refreshed before planning and cleared on refresh failure.
 
-The catalog starts empty. Ask a question such as "Inspect the available KWin
-interfaces" or make an unfamiliar desktop request to trigger the planner's bounded
-discovery. It does not crawl every session/system object at startup. An interface
-signature describes types, not meaning, units, valid ranges or side effects; these
-may still require upstream documentation or a clarification question.
+Kev receives up to 254 stably sorted documents, independent of user wording.
+Large menus can use interface-group selection before operation selection.
+Readable properties, no-input methods and writable boolean properties supply
+concrete candidates. Adapter schemas supply finite argument domains. Free-form
+arguments and multiple actions go to Qwen. See the [workflow](DECISION_WORKFLOW.md).
 
-Export the currently observed documentation while the controller is running:
+The planner additionally receives a small lexical shortlist. There is no embedding
+service. Signatures alone do not establish meaning, units, ranges or side effects.
+Generic mutations still need live introspection, validation, owner checks and
+approval. Some adapter operations use fixed native utilities internally.
+
+While the controller is running:
 
 ```sh
 aurora-control capabilities > aurora-capabilities.md
 ```
 
-This uses the same private, same-user control socket as approval. Documents may
-contain application/service names. They contain interface metadata, not property
-values or microphone recordings. Exports are capped at 90,000 characters. The export is a snapshot, not an executable
-configuration file. The live interface is checked again before changes execute.
+The private same-user socket exports metadata and descriptions, not property
+values or recordings. It can reveal application/service names and is capped at
+90,000 characters. This is a diagnostic snapshot, not executable configuration.
+For empty exports or refresh failures, check `aurora-desktop.service` and the
+merged report before interpreting model behavior.

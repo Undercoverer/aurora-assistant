@@ -141,7 +141,8 @@ parallel = 1
 sleep-idle-seconds = -1
 [hf.co/ggml-org/Kev-4B-GGUF:Q4_K_M]
 model = /var/lib/aurora-models/current/kev.gguf
-ctx-size = 8192
+ctx-size = 32768
+cache-ram = 512
 n-gpu-layers = 0
 load-on-startup = true
 [hf.co/Qwen/Qwen3-4B-GGUF:Q4_K_M]
@@ -173,3 +174,5 @@ and available RAM still affect latency. Timed captions currently require synthes
 and alignment before playback begins. Use phase durations from `aurora-report`
 to identify the remaining delay; `wordSync = false` can isolate alignment cost.
 The shared router and real audio/model latency still require target-host testing.
+
+See [decision workflow](DECISION_WORKFLOW.md#context-and-cache) for Kev context, cache and validation limits.

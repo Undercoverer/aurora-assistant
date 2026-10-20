@@ -91,6 +91,7 @@ def _validate_policy(data):
     _validate_number(data.get('conversation', {}), 'maxFollowUps', 0, 4, integer=True)
     _validate_number(data.get('kev', {}), 'threshold', .5, 1)
     _validate_number(data.get('kev', {}), 'timeoutSeconds', 1, 60)
+    _validate_number(data.get('kev', {}), 'contextSize', 4096, 65536, integer=True)
     if 'url' in data.get('kev', {}):
         data['kev']['url'] = local_url(data['kev']['url'])
     if data.get('safety', {}).get('backend', 'planner') not in ('kev', 'planner'):
