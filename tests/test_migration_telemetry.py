@@ -71,5 +71,59 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
                          {"reason": "execution_error", "completed_actions": 1})
 
 
+    async def test_policy_block_never_executes(self):
+        agent = self.make_agent()
+        agent._review.return_value = {"decision": "block", "reason": "Policy"}
+        with patch("aurora_assistant.agent.event") as event:
+            await agent._execute_plan("private request", [])
+        event.assert_any_call("apply.failure.reason", reason="policy", completed_actions=0)
+        agent.desktop.execute.assert_not_awaited()
+        agent.approval.request.assert_not_awaited()
+
+    async def test_denied_approval_never_executes(self):
+        agent = self.make_agent()
+        agent.approval.request.return_value = False
+        with patch("aurora_assistant.agent.event") as event:
+            await agent._execute_plan("private request", [{"requires_approval": True}])
+        event.assert_any_call("apply.failure.reason", reason="not_approved", completed_actions=0)
+        agent.desktop.execute.assert_not_awaited()
+
+    async def test_expiry_after_approval_never_executes(self):
+        agent = self.make_agent()
+        agent.approval.request.return_value = True
+        # Patch only the agent's clock reference, not asyncio's shared time module.
+        with patch("aurora_assistant.agent.time") as clock, patch("aurora_assistant.agent.event") as event:
+            clock.monotonic.side_effect = [0, 1, 99]
+            await agent._execute_plan("private request",
+                                      [{"requires_approval": True, "expires_at": 100}])
+        agent.approval.request.assert_awaited_once()
+        agent.desktop.execute.assert_not_awaited()
+        event.assert_any_call("apply.failure.reason", reason="expired", completed_actions=0)
+
+    async def test_cancel_during_execution_stops_remaining_actions(self):
+        agent = self.make_agent()
+        agent.desktop.execute.side_effect = ["Completed.", asyncio.CancelledError()]
+        steps = [{"requires_approval": False, "action": {"name": "theme"}} for _ in range(3)]
+        with patch("aurora_assistant.agent.event") as event:
+            with self.assertRaises(asyncio.CancelledError):
+                await agent._execute_plan("private request", steps)
+        event.assert_any_call("apply.failure.reason", reason="cancelled", completed_actions=1)
+        self.assertEqual(agent.desktop.execute.await_count, 2)
+
+    async def test_execution_error_does_not_log_private_values(self):
+        agent = self.make_agent()
+        secret = "PRIVATE_ARGUMENT_83f40"
+        agent.desktop.execute.side_effect = ValueError(secret)
+        step = {"requires_approval": False, "action": {"name": "theme", "argument": secret}}
+        with patch.object(telemetry, "log_content", False):
+            with self.assertLogs("aurora", level="INFO") as captured:
+                await agent._execute_plan(secret, [step])
+        self.assertNotIn(secret, "\n".join(captured.output))
+        row = telemetry.snapshot()["events"][-1]
+        self.assertEqual(row["event"], "apply.failure.reason")
+        self.assertEqual(row["reason"], "execution_error")
+        self.assertNotIn("error_message", row)
+
+
 if __name__ == "__main__":
     unittest.main()

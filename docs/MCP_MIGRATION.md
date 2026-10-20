@@ -14,7 +14,7 @@ New events use the existing structured journal and diagnostic snapshot.
 | --- | --- | --- |
 | turn.end_to_end_ms | value, unit=ms, completion, boundary=controller_lifecycle | Starts after the controller acquires its visual lock and receives final transcription; ends after its handler returns or raises. Includes approval wait, speech, error/result dwell and overlay cleanup. Excludes audio capture, STT and lock wait. |
 | turn.processing_ms | value, unit=ms, completion, boundary=agent_run | Existing SettingsAgent.run duration, including discovery, model calls, approval and action execution. Excludes final spoken response and result dwell. Absent in the legacy non-agent path. |
-| apply.failure.reason | reason, completed_actions | policy, not_approved, expired, or execution_error at known execution boundaries. not_approved includes denial and approval timeout because the existing approval API returns only a boolean. |
+| apply.failure.reason | reason, completed_actions | policy, not_approved, expired, cancelled, or execution_error at known execution boundaries. not_approved includes denial and approval timeout because the existing approval API returns only a boolean. |
 
 Timing completion=returned describes control flow, not successful execution:
 the controller handles some errors internally. completion=raised includes cancellation.
@@ -95,3 +95,16 @@ Then exercise successful, refused, expired, partial-failure and cancelled turns 
 a test desktop and inspect aurora-report. Existing snapshot retention is bounded;
 use journal output for longer benchmark runs. Do not interpret missing future-stage
 events as passing acceptance. Nix evaluation and live desktop checks remain required.
+
+## Follow-up review
+
+Cancellation during an action now emits reason=cancelled and propagates the
+cancellation. The in-flight action may have changed state; later actions do not run.
+Ten focused tests cover duration, correlation, policy block, refusal, expiry,
+partial failure, cancellation and private exception text.
+
+The migration-telemetry workflow runs the focused suite on Python 3.11 without
+installing application dependencies or models. Actions are pinned to commit IDs
+and the job has read-only repository access. This is a focused instrumentation
+check, not full-suite, Nix, MCP or desktop acceptance. Check the workflow result
+for the exact PR head; adding a workflow does not establish that it passed.

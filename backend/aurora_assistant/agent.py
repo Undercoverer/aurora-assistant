@@ -168,6 +168,9 @@ class SettingsAgent:
             try:
                 with phase("desktop.execute", action=step.get("action", {}).get("name", "unknown")):
                     results.append(await self.desktop.execute(step))
+            except asyncio.CancelledError:
+                event('apply.failure.reason', reason='cancelled', completed_actions=len(results))
+                raise
             except Exception as exc:
                 failure('apply.failure.reason', exc, reason='execution_error', completed_actions=len(results))
                 self.failed = True
