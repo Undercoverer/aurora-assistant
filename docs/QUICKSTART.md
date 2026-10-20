@@ -6,7 +6,8 @@ Use an existing x86_64 NixOS machine with KDE Plasma on Wayland, a working deskt
 user session, PipeWire/WirePlumber audio, and a microphone. This module does not
 configure your display manager, disks, hardware, user account, or audio stack.
 Test the microphone and speaker in Plasma before installing the assistant.
-Speech inference is currently CPU-only. Ollama hardware acceleration is separate.
+Speech inference is currently CPU-only. Kev and the planner also default to CPU;
+GPU offload requires a compatible inferencePackage and configured gpuLayers.
 Choose models that fit your available memory and disk space; no latency target
 has yet been measured on a real deployment.
 
@@ -28,14 +29,14 @@ programs.aurora-assistant = {
 
 This uses the trained `hey_jarvis` wake model, base.en final recognition, tiny.en
 provisional recognition, Supertonic 3 with voice F1, Kev-4B for decisions, and
-qwen3:4b for planning. These defaults can be written explicitly:
+Qwen3-4B Q4_K_M for planning. These defaults can be written explicitly:
 
 ```nix
 programs.aurora-assistant = {
   enable = true;
   user = "alice";
   kev.model = "hf.co/ggml-org/Kev-4B-GGUF:Q4_K_M";
-  ollama.model = "qwen3:4b";
+  planner.model = "hf.co/Qwen/Qwen3-4B-GGUF:Q4_K_M";
   safety.backend = "kev";
 };
 ```
@@ -63,7 +64,7 @@ terminal in the configured desktop user's Plasma session:
 
 ```sh
 systemctl --user restart aurora-assistant.target
-systemctl --user status aurora-desktop.service aurora-controller.service aurora-tts.service
+systemctl --user status aurora-desktop.service aurora-controller.service aurora-tts.service aurora-inference.service
 journalctl --user -u aurora-controller.service -b
 ```
 
@@ -103,7 +104,7 @@ files remain intact after a failed staged download.
 | Symptom | Check |
 | --- | --- |
 | Missing shared library during build | Capture the complete `nix log` output; native packaging needs target-host validation. |
-| Model service fails | Read its system journal; check model ID, disk space, repository access, and local Ollama. |
+| Model service fails | Read its system journal; check model ID, disk space, repository access, and available disk space. |
 | Controller keeps restarting | Run the offline model check in SETUP.md; check the TTS service and user D-Bus session. |
 | No overlay | Check `aurora-voice-overlay.service` and that this is the configured user's Plasma Wayland session. |
 | No microphone signal | Check Plasma input selection and mute state; `inputDevice = null` uses the default input. |
@@ -119,3 +120,5 @@ To stop the assistant for this login session, use
 For service failures, delays, and a single copyable diagnostic report, see
 [Troubleshooting](TROUBLESHOOTING.md). For discovered capabilities, see
 [the D-Bus catalog](CAPABILITIES.md).
+
+Existing Ollama-based installations must follow [the llama.cpp migration](LLAMA_CPP.md).

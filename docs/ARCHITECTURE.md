@@ -2,10 +2,11 @@
 
 1. openWakeWord activates the microphone turn. Silero detects speech boundaries.
    RealtimeSTT/faster-whisper supplies provisional replacements and final text.
-2. Kev gets up to two rounds by default to fill common typed actions. Explicit absolute volume,
-   mute, and playback requests can take this path. Common app/theme/audio lookups can stay with Kev for a second round.
-   Unresolved identifiers or uncertain intent go to the larger `ollama.model` planner.
-   Routing has a 15-second HTTP timeout, not a guaranteed response-time target.
+2. Kev gets up to two decision rounds by default to select fully specified actions.
+   Explicit absolute volume, mute and playback requests can take this path. Observed
+   argument-free D-Bus methods and readable properties are also candidates.
+   Unresolved identifiers or uncertain intent go to the larger `planner.model` planner.
+   Routing has a configurable 10-second HTTP timeout, not a guaranteed response-time target.
 3. The larger planner can discover services, objects, properties, themes, and apps
    over bounded rounds. Read results are untrusted data. A discovery round never
    executes accompanying mutations. Preparation errors feed back to the planner.
@@ -18,16 +19,17 @@
 6. The overlay and local TTS communicate the observed result. A successful method
    return is distinguished from independently verified state.
 
-Kev, the larger planner, and the reviewer are roles, not necessarily three loaded
-models. By default they use the same configured Ollama tag. Set `kev.model` to a
-smaller local model if desired; `safety.model` controls the review role. Reusing
-weights does not provide independent judgment. A malformed or failed Kev answer
-falls back to the larger planner without executing it. A failed reviewer asks for
-local approval. Model preparation includes every enabled role by name.
+Kev and Qwen share one llama.cpp router endpoint and systemd unit. The router
+starts separate model worker processes using the same installed package.
+Kev uses `/v1/systemone`; the planner uses `/v1/chat/completions`. Review defaults
+to Kev in a separate decision request. `safety.backend = "planner"` uses the planner
+in a separate tool-free context instead. Reusing weights does not provide independent
+judgment. A failed Kev route falls back to the planner; a failed review asks for
+approval. No Ollama service is managed or contacted.
 
 | Service | Manager | Responsibility |
 | --- | --- | --- |
-| ollama | System | Local model inference, loopback only |
+| aurora-inference | User | llama.cpp router and Kev/Qwen workers, loopback port 8008 |
 | aurora-models | System, configured user | Download and validate named assets during provisioning |
 | aurora-desktop | User | D-Bus adapter for desktop backends and installed applications |
 | aurora-voice-overlay | User | Qt/QML visuals and pinned D-Bus interface |
@@ -37,11 +39,11 @@ local approval. Model preparation includes every enabled role by name.
 `aurora-assistant.target` groups the user services under the graphical session.
 The system model provisioner and user session are distinct systemd managers;
 offline manifest checks gate the inference services while assets are incomplete.
-Stopping the target stops its user services. It does not stop the system Ollama
-service or delete model files.
+Stopping the target stops its user services, including the router and both model workers. It does
+not delete model files.
 
 The overlay contract is unchanged. No KWin effect, new approval dialog, barge-in,
-conversation memory, or arbitrary file editor is included in this update.
+persistent conversation memory, or arbitrary file editor is included in this update.
 
 When webSearch.enable is true, the larger planner can return one standalone
 web_search action. Its results enter a separate tool-free summarizer and terminate

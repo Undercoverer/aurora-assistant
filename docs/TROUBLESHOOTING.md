@@ -4,7 +4,8 @@
 
 Remove an old explicit `kev.model = "qwen3:0.6b"` override. The correct default is
 `hf.co/ggml-org/Kev-4B-GGUF:Q4_K_M`; it runs through llama.cpp's System One endpoint,
-not Ollama chat completions. Planner configuration remains `ollama.model`.
+not Ollama chat completions. Planner configuration now uses `planner.model`; remove old `ollama.*` options
+as described in [the migration guide](LLAMA_CPP.md).
 
 Assuming the flake input is named `aurora` and the NixOS host is `framework`:
 
@@ -18,7 +19,7 @@ systemctl status aurora-models.service
 Wait for successful model provisioning, then run from the configured Plasma user:
 
 ```sh
-systemctl --user restart aurora-kev.service aurora-tts.service aurora-desktop.service aurora-controller.service
+systemctl --user restart aurora-inference.service aurora-tts.service aurora-desktop.service aurora-controller.service
 aurora-assistant --check-audio
 ```
 
@@ -45,8 +46,8 @@ aurora-report --since '30 minutes ago' | wl-copy
 
 The report contains package revision, actual user-unit executable/config paths,
 restart counts and status, plus a merged UTC journal timeline from controller,
-Kev, TTS, desktop adapter, overlay, PipeWire/WirePlumber, model provisioner,
-Ollama and managed search services. It is scoped to the current boot. Missing
+the shared inference router and its workers, TTS, desktop adapter, overlay,
+PipeWire/WirePlumber, model provisioner and managed search services. It is scoped to the current boot. Missing
 permission to read system journals is reported; it does not silently claim the
 report is complete. It does not dump environment variables or record audio.
 Review it before sharing because upstream service messages can contain personal
@@ -100,14 +101,14 @@ voice follow-ups until it is unmuted through desktop controls.
 ## Dependencies and latency
 
 Native libraries, Qt components, CLI utilities and inference service dependencies
-come from nixpkgs. Kev uses `pkgs.llama-cpp` when its version is at least 0.6.0.
-The currently pinned older nixpkgs needs a pinned 0.6.0 compatibility derivation
+come from nixpkgs. Kev uses `pkgs.llama-cpp` when its version is at least 0.7.0.
+The currently pinned older nixpkgs needs a pinned 0.7.0 compatibility derivation
 built with nixpkgs tools/libraries; older servers lack the required endpoint.
-`kev.package` permits an explicit compatible package override. Python retains the
+`inferencePackage` permits an explicit compatible package override. Python retains the
 existing uv2nix lock because the speech packages require a coordinated version set.
 No dependency or model is installed ad hoc during normal voice operation.
 
-CPU Kev, Whisper, Supertonic and Ollama can contend for compute and memory. No
+CPU Kev, Whisper, Supertonic and Qwen can contend for compute and memory. No
 one-second latency guarantee has been verified. Check phase durations before
 changing model sizes. TTS alignment adds work; `wordSync = false` disables word
 alignment when troubleshooting synthesis latency. The small common-command route

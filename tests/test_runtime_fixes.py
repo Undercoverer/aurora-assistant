@@ -147,7 +147,7 @@ class DiagnosticTests(unittest.TestCase):
     def test_report_merges_user_and_system_time_order(self):
         from aurora_assistant.report import collect
         rows = [('', '', 0), (json.dumps({'__REALTIME_TIMESTAMP': '2000000', '_SYSTEMD_USER_UNIT': 'aurora-controller.service', 'MESSAGE': 'later'}), '', 0),
-                (json.dumps({'__REALTIME_TIMESTAMP': '1000000', '_SYSTEMD_UNIT': 'ollama.service', 'MESSAGE': 'earlier'}), '', 0)]
+                (json.dumps({'__REALTIME_TIMESTAMP': '1000000', '_SYSTEMD_UNIT': 'aurora-models.service', 'MESSAGE': 'earlier'}), '', 0)]
         with patch('aurora_assistant.report.run', side_effect=rows):
             report = collect('30 minutes ago')
         self.assertLess(report.index('earlier'), report.index('later'))

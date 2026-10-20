@@ -1,6 +1,7 @@
 import asyncio
 import io
 import json
+import time
 from .actions import schema
 from .telemetry import event, phase, turn_id, content
 
@@ -59,19 +60,33 @@ class Inference:
         return json.loads(output)
 
     async def wait_ready(self):
-        for attempt in range(60):
+        inference = self.config.get('inference', {})
+        deadline = time.monotonic() + inference.get('startupTimeoutSeconds', 180)
+        while time.monotonic() < deadline:
             try:
+                if inference.get('models'):
+                    router = await self.request("GET", inference['url'] + '/models', timeout=2)
+                    router.raise_for_status()
+                    available = {item['id']: item for item in router.json()['data']}
+                    for name in inference['models']:
+                        if name not in available:
+                            raise ValueError('Configured model is absent from the router preset')
+                        status = available[name].get('status', {})
+                        if status.get('failed'):
+                            raise ValueError('Managed model failed to load; inspect aurora-inference.service')
+                    if any(available[name].get('status', {}).get('value') != 'loaded' for name in inference['models']):
+                        await asyncio.sleep(1)
+                        continue
                 llm = await self.request("GET", self.config["llm"]["url"] + "/models", timeout=2)
                 tts = await self.request("GET", self.config["tts"]["url"].removesuffix("/v1") + "/health", timeout=2)
                 llm.raise_for_status()
                 tts.raise_for_status()
                 names = {m["id"] for m in llm.json()["data"]}
                 wanted = {self.config["llm"]["model"]}
-                if self.config.get("safety", {}).get("enable", False) and self.config.get("safety", {}).get("backend", "ollama") == "ollama":
+                if self.config.get("safety", {}).get("enable", False) and self.config.get("safety", {}).get("backend", "planner") == "planner":
                     wanted.add(self.config["safety"]["model"])
-                wanted = {name if ':' in name.rsplit('/', 1)[-1] else name + ':latest' for name in wanted}
                 if not wanted.issubset(names):
-                    raise ValueError("Configured Ollama model is not installed")
+                    raise ValueError("Configured planner model is not installed or its API alias does not match")
                 if tts.json().get("ready"):
                     if self.config.get('kev', {}).get('enable', False):
                         from .kev import Kev

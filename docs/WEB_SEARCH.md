@@ -86,7 +86,7 @@ Aurora accepts only a literal loopback HTTP address, rejects redirects, ignores
 HTTP proxy environment variables, and limits response bytes, result counts, and
 time. It sends queries as POST form data, using SearXNG's `/search` JSON API.
 The API is not an OpenAI endpoint; local model summarization uses the existing
-OpenAI-compatible Ollama endpoint.
+local OpenAI-compatible planner endpoint.
 
 ## Troubleshooting
 

@@ -49,7 +49,7 @@ programs.aurora-assistant = {
   language = "en";
   inputDevice = null;
   voice = "F1";
-  ollama.model = "qwen3:4b";
+  planner.model = "hf.co/Qwen/Qwen3-4B-GGUF:Q4_K_M";
 
   applications = {
     files = "org.kde.dolphin.desktop";
@@ -111,17 +111,16 @@ application finished opening or reached a particular screen.
 
 ## Model capacity and permissions are separate
 
-`ollama.model = "qwen3:8b"` selects a larger model; provision that model in Ollama
-before restarting the controller. Qwen3 14B is another option when memory and
-latency permit. The appropriate size depends on host RAM, GPU memory, model
-quantization, and the latency you can accept. The model must support the supplied
-structured-output schema. A larger model does not receive extra system access.
-Changing this option does not enable GPU acceleration. The current speech package
-is CPU-only; Ollama acceleration is configured separately through NixOS.
+`planner.model = "hf.co/Qwen/Qwen3-8B-GGUF:Q4_K_M"` requests a larger GGUF.
+Provisioning resolves and downloads the requested quantization, failing if it does
+not exist. Model size depends on host memory and acceptable latency. The model
+must support the structured-output schema. Extra capacity grants no extra access.
+GPU acceleration requires a compatible inferencePackage and planner.gpuLayers;
+changing the model name alone does not enable it. See [LLAMA_CPP.md](LLAMA_CPP.md).
 
-The current controller supports one planning pass with at most four actions.
-It has no recursive agent loop, persistent conversation memory, automatic D-Bus
-service discovery, or model-generated Python/shell execution.
+The controller supports bounded discovery rounds and batches of up to four actions.
+It has short clarification context, but no persistent conversation memory or
+model-generated Python/shell execution.
 
 ## D-Bus capabilities
 

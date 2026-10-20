@@ -10,7 +10,7 @@ class ModelTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
-        self.spec = {'stt': 'tiny.en', 'llm': 'qwen3:4b'}
+        self.spec = {'stt': 'tiny.en', 'plannerModel': 'hf.co/Qwen/Qwen3-4B-GGUF:Q4_K_M'}
         self.installs = []
 
     def tearDown(self):
@@ -21,11 +21,8 @@ class ModelTests(unittest.TestCase):
         (path / 'model.onnx').write_bytes(b'fake-model-for-atomicity-tests')
         return {'test': 'revision'}
 
-    def ollama(self, spec, refresh=False):
-        return {spec['llm']: 'digest'}
-
     def test_success_creates_atomic_generation_and_manifest(self):
-        provision(self.spec, self.root, installer=self.install, ollama=self.ollama)
+        provision(self.spec, self.root, installer=self.install)
         data = check(self.spec, self.root, full=True)
         self.assertEqual(data['spec_hash'], spec_hash(self.spec))
         self.assertIn('model.onnx', data['files'])
@@ -33,35 +30,35 @@ class ModelTests(unittest.TestCase):
 
     def test_unchanged_configuration_does_not_download_again(self):
         for _ in range(2):
-            provision(self.spec, self.root, installer=self.install, ollama=self.ollama)
+            provision(self.spec, self.root, installer=self.install)
         self.assertEqual(len(self.installs), 1)
 
     def test_failed_download_keeps_previous_generation(self):
-        provision(self.spec, self.root, installer=self.install, ollama=self.ollama)
+        provision(self.spec, self.root, installer=self.install)
         previous = (self.root / 'current').resolve()
         changed = {**self.spec, 'stt': 'nonexistent-model'}
         def fail(spec, path):
             (path / 'partial.bin').write_bytes(b'partial')
             raise ValueError('Unknown model')
         with self.assertRaisesRegex(ValueError, 'Unknown model'):
-            provision(changed, self.root, installer=fail, ollama=self.ollama)
+            provision(changed, self.root, installer=fail)
         self.assertEqual(previous, (self.root / 'current').resolve())
         with self.assertRaisesRegex(ValueError, 'do not match'):
             check(changed, self.root)
         self.assertEqual(len(list((self.root / 'generations').iterdir())), 1)
 
     def test_corruption_is_detected_and_reprovisioned(self):
-        provision(self.spec, self.root, installer=self.install, ollama=self.ollama)
+        provision(self.spec, self.root, installer=self.install)
         (self.root / 'current/model.onnx').write_bytes(b'corrupted')
         with self.assertRaisesRegex(ValueError, 'hash mismatch'):
             check(self.spec, self.root, full=True)
-        provision(self.spec, self.root, installer=self.install, ollama=self.ollama)
+        provision(self.spec, self.root, installer=self.install)
         self.assertEqual(len(self.installs), 2)
 
-    def test_missing_ollama_model_blocks_activation(self):
-        def missing(spec, refresh=False):
+    def test_missing_gguf_blocks_activation(self):
+        def missing(spec, stage):
             raise ValueError('Model not found')
         with self.assertRaisesRegex(ValueError, 'not found'):
-            provision(self.spec, self.root, installer=self.install, ollama=missing)
+            provision(self.spec, self.root, installer=missing)
         self.assertFalse((self.root / 'current').exists())
         self.assertFalse(self.installs)

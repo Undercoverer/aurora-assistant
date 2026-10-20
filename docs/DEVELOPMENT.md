@@ -58,7 +58,8 @@ Do not describe a wrapper around a command as a native KDE or PipeWire interface
 ## Manual runtime example
 
 The sample `config/assistant.example.json` uses the same current model directory
-layout. For a manual run, install and start Ollama, provision the named assets,
+layout. For a manual run, provision the named assets and start both llama.cpp
+servers using the commands in [LLAMA_CPP.md](LLAMA_CPP.md),
 start the overlay and TTS server, and start the desktop adapter with
 `aurora-desktop --config config/assistant.example.json`. In another terminal in
 the same desktop session, run

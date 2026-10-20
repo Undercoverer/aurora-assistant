@@ -15,7 +15,7 @@ programs.aurora-assistant = {
     announceEscalation = true;
     escalationMessage = "Checking that in more detail.";
   };
-  ollama.model = "qwen3:4b";
+  planner.model = "hf.co/Qwen/Qwen3-4B-GGUF:Q4_K_M";
   wordSync = true;
 };
 ```

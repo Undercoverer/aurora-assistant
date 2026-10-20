@@ -24,7 +24,7 @@ programs.aurora-assistant = {
     tts = "supertonic-3";
   };
   kev.model = "hf.co/ggml-org/Kev-4B-GGUF:Q4_K_M";
-  ollama.model = "qwen3:4b";
+  planner.model = "hf.co/Qwen/Qwen3-4B-GGUF:Q4_K_M";
   safety = {
     enable = true;
     backend = "kev";
@@ -73,16 +73,16 @@ model terms for your intended use.
 
 `aurora-models.service` is a **system service** running as the configured desktop
 user. It downloads models during explicit deployment/startup provisioning. It
-pulls the planner and optional Ollama reviewer through the local Ollama service,
-downloads the named Kev GGUF for a dedicated System One server and speech assets, checks required files and ONNX/TTS loading, and writes a manifest
-of resolved revisions, Ollama digests, and file hashes. It stages all speech files
+downloads the planner and Kev GGUF files and speech assets, checks required files
+and ONNX/TTS loading, and writes a manifest of resolved revisions and file hashes.
+It stages all model files
 before atomically switching `modelDirectory/current` to the new generation.
 Failed staging does not replace an older complete generation. The new runtime
 configuration still refuses to start against an old, mismatched generation.
 
 Unchanged, verified models are reused. Normal voice processing and TTS run with
 offline flags and never invoke the provisioner themselves. A normal offline boot
-uses the existing speech snapshot and locally installed Ollama models. If a model
+uses the existing model snapshot without contacting an inference service. If a model
 is missing, provisioning must have network access to restore it. A misspelled
 model, missing repository, incompatible layout, or network failure makes the
 provisioning service fail with an error in its journal.
@@ -116,16 +116,16 @@ location outside the user's home because the provisioning service has
 ProtectHome enabled. Old complete generations are retained to avoid deleting
 model assets still in use. They are not garbage-collected automatically.
 
-Optional `models.revisions.stt`, `.realtimeStt`, and `.tts` pin Hugging Face
+Optional `models.revisions.stt`, `.realtimeStt`, `.tts`, `.kev`, and `.planner` pin Hugging Face
 commits. Without an explicit STT revision, the first download resolves the
 repository's current commit and records it. Subsequent unchanged starts reuse
 that snapshot. To request an update, change the revision or explicitly run the
-provisioner with `--refresh` as the configured user. Ollama tags can move; the
-manifest records the installed digest. Flake locks pin code, not all model tags.
+provisioner with `--refresh` as the configured user. Flake locks pin code; pin
+model revisions separately for reproducible weights.
 
 For manually managed assets, set `models.enable = false`; use modelDirectory and
-the `wakeModel`, `sttModel`, and `realtimeSttModel` path options. Install Ollama
-models yourself in that mode. Do not retain old path overrides when switching
+the `wakeModel`, `sttModel`, `realtimeSttModel`, `kev.modelFile`, and
+`planner.modelFile` path options. Install both GGUF files yourself in that mode. Do not retain old path overrides when switching
 to named provisioning unless those overrides are intentional.
 
 ## Natural multi-action requests

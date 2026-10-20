@@ -26,7 +26,7 @@ the end before enabling it as an always-running service.
    discards an overlong utterance. These bounds are configurable in JSON. A timed-out
    turn recreates the STT recorder to remove any cancelled audio still queued
    internally; this adds model initialization latency after a timeout.
-6. Qwen3 in Ollama returns a JSON-schema-constrained plan. The Python validator
+6. Qwen3 in llama.cpp returns a JSON-schema-constrained plan. The Python validator
    checks the entire plan before executing any of it. Unsupported fields,
    types, actions, and values fail closed. Maximum: four actions per turn.
 7. The executor uses fixed argument vectors, never a shell. Allowed operations:
@@ -68,7 +68,7 @@ programs.aurora-assistant = {
   silenceSeconds = 0.7;
   wakeThreshold = 0.5;
   voice = "F1";
-  ollama.model = "qwen3:4b";
+  planner.model = "hf.co/Qwen/Qwen3-4B-GGUF:Q4_K_M";
   applications = {
     files = "org.kde.dolphin.desktop";
     browser = "firefox.desktop";
@@ -83,7 +83,7 @@ manager, audio stack, or user accounts.
 
 `aurora-assistant.target` starts with `graphical-session.target`. It starts the
 controller, overlay, and Supertonic user services. The overlay uses systemd
-`Type=dbus` with its existing bus name. Ollama runs as the NixOS system service;
+`Type=dbus` with its existing bus name. Kev and the planner run under one llama.cpp router user service;
 no user unit attempts to order itself against a system-manager unit. The
 controller polls local API readiness and checks the configured model exists
 before opening the microphone. Units restart on failure, and stop with the
@@ -136,12 +136,9 @@ A customizable wake phrase requires an appropriate trained openWakeWord model.
 Changing a string does not train a new phrase. Set the desired model as wake.onnx
 and tune wakeThreshold after measuring false triggers in the target room.
 
-For Ollama, provision `qwen3:4b` once with `ollama pull qwen3:4b` while the local
-Ollama service is running. The module does not pull it at boot. Preserve the
-Ollama model digest when recording a deployment; a model tag alone is mutable.
-The module sets `OLLAMA_NO_CLOUD=1` when it manages Ollama. If
-`ollama.enable = false`, the administrator must provide a local-only Ollama
-service with that setting and the configured model already present.
+The module provisions named Kev and planner GGUF files before their llama.cpp
+services start. Model names, endpoints, package overrides and the migration from
+Ollama are documented in [LLAMA_CPP.md](LLAMA_CPP.md).
 
 Record all speech-model file hashes after provisioning:
 
@@ -154,7 +151,7 @@ The manifest records an exact installed snapshot; it does not certify its source
 Keep model revisions, license terms, the manifest, `uv.lock`, and `flake.lock`
 with the deployment. Model weights are not bundled in the ZIP or fetched by the
 flake. Thus the flake locks code dependencies; full deployment reproduction also
-requires the preserved model snapshots and Ollama digest.
+requires the preserved model snapshots and recorded Hugging Face revisions.
 
 ## Interfaces and privacy
 
@@ -229,6 +226,6 @@ ARM packaging, and custom KWin effects are not implemented in this build.
 
 - https://github.com/KoljaB/RealtimeSTT/tree/v1.1.2
 - https://github.com/dscripka/openWakeWord/tree/v0.6.0
-- https://docs.ollama.com/api/openai-compatibility
+- https://github.com/ggml-org/llama.cpp/tree/v0.7.0/tools/server
 - https://github.com/supertone-oss-archive/supertonic-py
 - https://github.com/pyproject-nix/uv2nix

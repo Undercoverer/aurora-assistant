@@ -70,19 +70,22 @@ def download(url, destination):
         raise ValueError(f'Empty model download: {destination.name}')
 
 
-def install_kev(name, revision, stage):
+def install_gguf(name, revision, destination):
     from huggingface_hub import HfApi, hf_hub_download
     match = re.fullmatch(r'hf\.co/([^/:]+/[^/:]+):([A-Za-z0-9_]+)', name)
     if not match:
-        raise ValueError('Kev model must use hf.co/owner/repository:QUANT format')
+        raise ValueError('GGUF model must use hf.co/owner/repository:QUANT format')
     repo, quant = match.groups()
     info = HfApi().model_info(repo, revision=revision or 'main')
     files = HfApi().list_repo_files(repo, revision=info.sha)
-    matches = [f for f in files if f.lower().endswith('.gguf') and quant.lower() in Path(f).name.lower()]
+    matches = [f for f in files if f.lower().endswith('.gguf') and re.search(r'(?:^|[._-])' + re.escape(quant) + r'(?:[._-]|$)', Path(f).name, re.IGNORECASE)]
     if len(matches) != 1:
-        raise ValueError('Kev quantization must resolve to exactly one GGUF file')
+        raise ValueError('Quantization must resolve to exactly one GGUF file; split or ambiguous models are not supported')
     source = hf_hub_download(repo, filename=matches[0], revision=info.sha)
-    shutil.copyfile(source, stage / 'kev.gguf')
+    with open(source, 'rb') as stream:
+        if stream.read(4) != b'GGUF':
+            raise ValueError('Downloaded model does not have a GGUF header')
+    shutil.copyfile(source, destination)
     return {'repo': repo, 'revision': info.sha, 'file': matches[0]}
 
 
@@ -92,7 +95,9 @@ def install_assets(spec, stage):
     from importlib.resources import files
     resolved = {}
     if spec.get('kevDecisionModel'):
-        resolved['kev'] = install_kev(spec['kevDecisionModel'], spec.get('revisions', {}).get('kev'), stage)
+        resolved['kev'] = install_gguf(spec['kevDecisionModel'], spec.get('revisions', {}).get('kev'), stage / 'kev.gguf')
+    if spec.get('plannerModel'):
+        resolved['planner'] = install_gguf(spec['plannerModel'], spec.get('revisions', {}).get('planner'), stage / 'planner.gguf')
     wake = spec['wakeWord']
     if wake not in MODELS and not spec.get('wakeSource'):
         raise ValueError(f'Unknown openWakeWord model {wake!r}; available: {", ".join(sorted(MODELS))}. A new phrase needs a trained model.')
@@ -147,51 +152,7 @@ def install_assets(spec, stage):
     return resolved
 
 
-def ensure_ollama(spec, refresh=False):
-    import httpx
-    from .config import local_url
-    url = local_url(spec['ollamaUrl'])
-    names = {spec['llm']}
-    if spec.get('kev'):
-        names.add(spec['kev'])
-    if spec.get('reviewer'):
-        names.add(spec['reviewer'])
-    if any('cloud' in name.lower() for name in names):
-        raise ValueError('Cloud Ollama models are not permitted')
-    with httpx.Client(trust_env=False, timeout=1800, follow_redirects=False) as client:
-        for attempt in range(60):
-            try:
-                response = client.get(url + '/api/tags', timeout=2)
-                response.raise_for_status()
-                break
-            except httpx.HTTPError:
-                if attempt == 59:
-                    raise RuntimeError('Local Ollama service did not become ready') from None
-                time.sleep(1)
-        existing = {m['name']: m for m in response.json()['models']}
-        resolved = {}
-        for name in sorted(names):
-            canonical = name if ':' in name.rsplit('/', 1)[-1] else name + ':latest'
-            if canonical not in existing or refresh:
-                print(f'Provisioning Ollama model: {name}', flush=True)
-                result = client.post(url + '/api/pull', json={'model': name, 'stream': False})
-                result.raise_for_status()
-                if result.json().get('error') or result.json().get('status') != 'success':
-                    raise ValueError(f'Ollama could not pull model {name}')
-            result = client.post(url + '/api/show', json={'model': name})
-            result.raise_for_status()
-            if result.json().get('remote_host') or result.json().get('remote_model'):
-                raise ValueError('Ollama model delegates inference to a remote host')
-            response = client.get(url + '/api/tags')
-            response.raise_for_status()
-            installed = {m['name']: m for m in response.json()['models']}
-            if canonical not in installed:
-                raise ValueError(f'Ollama model is absent after provisioning: {name}')
-            resolved[name] = installed[canonical]['digest']
-    return resolved
-
-
-def provision(spec, root, refresh=False, installer=install_assets, ollama=ensure_ollama):
+def provision(spec, root, refresh=False, installer=install_assets):
     root = Path(root)
     root.mkdir(parents=True, exist_ok=True)
     with (root / '.provision.lock').open('a') as lock:
@@ -200,14 +161,7 @@ def provision(spec, root, refresh=False, installer=install_assets, ollama=ensure
             cached = check(spec, root, full=True)
         except (OSError, ValueError, KeyError):
             cached = None
-        # This checks the local service even when all speech files are already cached.
-        ollama_models = ollama(spec, refresh=refresh)
         if cached and not refresh:
-            if cached.get('ollama') != ollama_models:
-                cached['ollama'] = ollama_models
-                manifest_update = root / '.manifest-next'
-                manifest_update.write_text(json.dumps(cached, indent=2) + '\n')
-                os.replace(manifest_update, root / 'current' / 'manifest.json')
             print('Configured models are already installed.', flush=True)
             return cached
         generations = root / 'generations'
@@ -219,7 +173,7 @@ def provision(spec, root, refresh=False, installer=install_assets, ollama=ensure
             if not content:
                 raise ValueError('No model files were installed')
             manifest = {'spec_hash': spec_hash(spec), 'requested': spec,
-                        'resolved': resolved, 'ollama': ollama_models, 'files': content}
+                        'resolved': resolved, 'files': content}
             (stage / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
             for path in stage.rglob('*'):
                 path.chmod(0o755 if path.is_dir() else 0o644)

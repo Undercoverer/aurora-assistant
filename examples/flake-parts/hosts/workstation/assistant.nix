@@ -10,8 +10,8 @@
     };
     # All names are provisioned automatically. Invalid names fail setup.
     kev.model = "hf.co/ggml-org/Kev-4B-GGUF:Q4_K_M";
-    ollama.model = "qwen3:4b";
-    safety.model = "qwen3:4b";
+    planner.model = "hf.co/Qwen/Qwen3-4B-GGUF:Q4_K_M";
+    safety.backend = "kev";
     silenceSeconds = 0.7;
     voice = "F1";
     # No applications or dbusActions entries are needed.

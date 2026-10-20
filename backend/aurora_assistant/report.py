@@ -7,8 +7,8 @@ import subprocess
 import sys
 
 USER_UNITS = ['aurora-controller.service', 'aurora-tts.service', 'aurora-desktop.service',
-              'aurora-voice-overlay.service', 'aurora-kev.service', 'pipewire.service', 'wireplumber.service']
-SYSTEM_UNITS = ['aurora-models.service', 'ollama.service', 'searx.service', 'uwsgi.service']
+              'aurora-voice-overlay.service', 'aurora-inference.service', 'pipewire.service', 'wireplumber.service']
+SYSTEM_UNITS = ['aurora-models.service', 'searx.service', 'uwsgi.service']
 
 
 def run(argv):

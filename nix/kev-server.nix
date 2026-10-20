@@ -1,11 +1,11 @@
 { lib, stdenv, fetchurl, cmake, ninja, pkg-config, openssl }:
 stdenv.mkDerivation {
-  pname = "aurora-kev-server";
-  version = "0.6.0";
+  pname = "aurora-llama-server";
+  version = "0.7.0";
   src = fetchurl {
-    name = "llama.cpp-0.6.0.tar.gz";
-    url = "https://codeload.github.com/ggml-org/llama.cpp/tar.gz/refs/tags/v0.6.0";
-    hash = "sha256-CbNtuiNfysGA7/8YUU2nA45l2OW55K76WSOEaKv97BI=";
+    name = "llama.cpp-0.7.0.tar.gz";
+    url = "https://codeload.github.com/ggml-org/llama.cpp/tar.gz/refs/tags/v0.7.0";
+    hash = "sha256-VdZ6zzrSrXR6m763X58OFz28wNF1OkcQOKkMgZQhxeE=";
   };
   nativeBuildInputs = [ cmake ninja pkg-config ];
   buildInputs = [ openssl ];
@@ -21,7 +21,7 @@ stdenv.mkDerivation {
     "-DLLAMA_OPENSSL=ON"
   ];
   meta = {
-    description = "Pinned local System One decision server for Kev, without web UI downloads";
+    description = "Pinned local llama.cpp server for Kev and chat models, without web UI downloads";
     homepage = "https://github.com/ggml-org/llama.cpp";
     license = lib.licenses.mit;
     platforms = [ "x86_64-linux" ];

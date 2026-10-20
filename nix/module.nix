@@ -3,26 +3,44 @@ let
   cfg = config.programs.aurora-assistant;
   types = lib.types;
   assetRoot = if cfg.models.enable then "${cfg.modelDirectory}/current" else cfg.modelDirectory;
+  managedKev = cfg.kev.enable && cfg.kev.manageService;
+  managedPlanner = cfg.planner.manageService;
+  modelAlias = name: let parts = lib.splitString ":" name; in
+    if builtins.length parts == 2 then "${builtins.head parts}:${lib.toUpper (lib.last parts)}" else name;
+  kevAlias = if managedKev then modelAlias cfg.kev.model else cfg.kev.model;
+  plannerAlias = if managedPlanner then modelAlias cfg.planner.model else cfg.planner.model;
+  managedModels = lib.optional managedKev kevAlias ++ lib.optional managedPlanner plannerAlias;
+  routerUrl = "http://127.0.0.1:${toString cfg.inference.port}";
+  routerPreset = pkgs.writeText "aurora-llama-models.ini" ("version = 1\n" + lib.generators.toINI {} (
+    { "*" = { parallel = 1; sleep-idle-seconds = -1; }; }
+    // lib.optionalAttrs managedKev {
+      "${kevAlias}" = { model = cfg.kev.modelFile; ctx-size = 8192;
+        n-gpu-layers = cfg.kev.gpuLayers; load-on-startup = true; };
+    }
+    // lib.optionalAttrs managedPlanner {
+      "${plannerAlias}" = { model = cfg.planner.modelFile; ctx-size = cfg.planner.contextSize;
+        n-gpu-layers = cfg.planner.gpuLayers; load-on-startup = true;
+        jinja = true; chat-template-kwargs = ''{"enable_thinking":false}''; };
+    }
+  ));
   modelSpec = pkgs.writeText "aurora-models.json" (builtins.toJSON {
     inherit (cfg.models) stt realtimeStt wakeWord wakeSource silero tts revisions;
     voice = cfg.voice;
-    llm = cfg.ollama.model;
-    kev = null;
+    plannerModel = if cfg.planner.manageService then cfg.planner.model else null;
     kevDecisionModel = if cfg.kev.enable && cfg.kev.manageService then cfg.kev.model else null;
-    reviewer = if cfg.safety.enable && cfg.safety.backend == "ollama" then cfg.safety.model else null;
-    ollamaUrl = "http://127.0.0.1:11434";
   });
   modelCheck = lib.escapeShellArgs [ "${cfg.package}/bin/aurora-models"
     "--config" modelSpec "--root" cfg.modelDirectory "--check" ];
   packages = self.packages.${pkgs.stdenv.hostPlatform.system};
   runtimeConfig = pkgs.writeText "aurora-assistant.json" (builtins.toJSON {
+    inference = { url = routerUrl; models = managedModels; startupTimeoutSeconds = cfg.inference.startupTimeoutSeconds; };
     webSearch = { inherit (cfg.webSearch) enable url maxResults language; };
     apps = cfg.applications;
     dbus_actions = cfg.dbusActions;
     settings = { enable = true; sessionPrefixes = cfg.settings.sessionPrefixes;
       systemPrefixes = cfg.settings.systemPrefixes; maxRounds = cfg.settings.maxRounds; };
-    kev = { inherit (cfg.kev) enable model url threshold timeoutSeconds maxRounds announceEscalation escalationMessage; };
-    safety = { inherit (cfg.safety) enable model backend; };
+    kev = { inherit (cfg.kev) enable url threshold timeoutSeconds maxRounds announceEscalation escalationMessage; model = kevAlias; };
+    safety = { inherit (cfg.safety) enable backend; model = if managedPlanner && cfg.safety.model == cfg.planner.model then plannerAlias else cfg.safety.model; };
     diagnostics = { inherit (cfg.diagnostics) logContent; };
     presentation = { inherit (cfg.presentation) resultSeconds errorSeconds agentTimeoutSeconds; };
     conversation = { inherit (cfg.conversation) followUpSeconds maxFollowUps; };
@@ -34,7 +52,7 @@ let
       plasma-theme = "${pkgs.kdePackages.plasma-workspace}/bin/plasma-apply-lookandfeel";
       kreadconfig = "${pkgs.kdePackages.kconfig}/bin/kreadconfig6";
     };
-    llm = { url = "http://127.0.0.1:11434/v1"; model = cfg.ollama.model; };
+    llm = { inherit (cfg.planner) url; model = plannerAlias; };
     tts = { url = "http://127.0.0.1:${toString cfg.ttsPort}/v1";
       model = cfg.models.tts; voice = cfg.voice; wordSync = cfg.wordSync; };
     stt = {
@@ -74,6 +92,14 @@ let
     DO_NOT_TRACK = "1";
   };
 in {
+  imports = [
+    (lib.mkRenamedOptionModule [ "programs" "aurora-assistant" "kev" "port" ] [ "programs" "aurora-assistant" "inference" "port" ])
+    (lib.mkRenamedOptionModule [ "programs" "aurora-assistant" "kev" "package" ] [ "programs" "aurora-assistant" "inferencePackage" ])
+    (lib.mkRemovedOptionModule [ "programs" "aurora-assistant" "ollama" "enable" ]
+      "Aurora now manages llama.cpp. Remove ollama.enable; use planner.manageService for an external local chat server.")
+    (lib.mkRemovedOptionModule [ "programs" "aurora-assistant" "ollama" "model" ]
+      "Use planner.model with a GGUF name, for example hf.co/Qwen/Qwen3-4B-GGUF:Q4_K_M. Ollama tags cannot be used as GGUF names.")
+  ];
   options.programs.aurora-assistant = {
     enable = lib.mkEnableOption "local Aurora voice assistant for Plasma Wayland";
     user = lib.mkOption { type = types.str; description = "Existing desktop account that runs the assistant services and owns model files. This module does not create the account or configure login."; example = "alice"; };
@@ -108,7 +134,7 @@ in {
       tts = lib.mkOption {
         description = "Supertonic model name: supertonic, supertonic-2, or supertonic-3. Models are downloaded at provisioning, never during synthesis."; type = types.str; default = "supertonic-3"; };
       revisions = lib.mkOption { type = types.attrsOf types.str; default = {};
-        description = "Optional Hugging Face revisions keyed by stt, realtimeStt, tts, or kev."; };
+        description = "Optional Hugging Face revisions keyed by stt, realtimeStt, tts, kev, or planner."; };
     };
     webSearch = {
       enable = lib.mkOption {
@@ -145,7 +171,7 @@ in {
     };
     kev.enable = lib.mkOption {
       type = types.bool; default = true;
-      description = "Try Kev first for common requests. Uncertain, invalid, or timed-out routes go to ollama.model before any action runs.";
+      description = "Try Kev first for common requests. Uncertain, invalid, or timed-out routes go to planner.model before any action runs.";
     };
     kev.maxRounds = lib.mkOption {
       type = types.ints.between 1 4; default = 2;
@@ -165,17 +191,13 @@ in {
       description = "Actual Kev decision-model GGUF, provisioned by name and served through llama.cpp /v1/systemone. This is not an Ollama chat router.";
     };
     kev.manageService = lib.mkOption { type = types.bool; default = true;
-      description = "Start a dedicated local llama.cpp decision server using the provisioned Kev GGUF."; };
-    kev.package = lib.mkOption { type = types.package; default = packages.kev-server;
-      defaultText = lib.literalExpression "self.packages.<system>.kev-server";
-      description = "llama.cpp package with Kev /v1/systemone support (0.6.0 or newer). Uses nixpkgs when sufficiently recent, otherwise the pinned compatibility derivation. Older releases cannot serve this model."; };
-    kev.port = lib.mkOption { type = types.port; default = 8008; description = "Loopback port for the managed Kev server."; };
-    kev.url = lib.mkOption { type = types.str; default = "http://127.0.0.1:${toString cfg.kev.port}";
-      description = "Local literal-loopback System One server URL. Set manageService=false to use an existing compatible server."; };
+      description = "Include Kev in the managed llama.cpp router and provision its GGUF."; };
+    kev.url = lib.mkOption { type = types.str; default = routerUrl;
+      description = "Local literal-loopback System One server URL. Defaults to the shared router. Set manageService=false to use an existing compatible server."; };
     kev.modelFile = lib.mkOption { type = types.str; default = "${assetRoot}/kev.gguf";
       description = "Local Kev GGUF path. Normal operation never downloads model files."; };
     kev.gpuLayers = lib.mkOption { type = types.ints.unsigned; default = 0;
-      description = "Layers offloaded by llama.cpp. Zero selects CPU; use a GPU-enabled kev.package before increasing this."; };
+      description = "Layers offloaded by llama.cpp. Zero selects CPU; use a GPU-enabled inferencePackage before increasing this."; };
     kev.timeoutSeconds = lib.mkOption { type = types.numbers.between 1 60; default = 10;
       description = "Deadline for each Kev decision; routing timeout escalates and review timeout requires approval."; };
     kev.threshold = lib.mkOption { type = types.numbers.between 0.5 1; default = 0.95;
@@ -192,12 +214,12 @@ in {
       description = "Listen without another wake word after a clarification question for this many seconds. Zero disables follow-up listening."; };
     conversation.maxFollowUps = lib.mkOption { type = types.ints.between 0 4; default = 2;
       description = "Maximum consecutive clarification replies retained in memory for one conversation."; };
-    safety.backend = lib.mkOption { type = types.enum [ "kev" "ollama" ]; default = if cfg.kev.enable then "kev" else "ollama";
-      description = "Use Kev's noul decision for review, or a separate Ollama chat reviewer. Neither bypasses deterministic approval requirements."; };
+    safety.backend = lib.mkOption { type = types.enum [ "kev" "planner" ]; default = if cfg.kev.enable then "kev" else "planner";
+      description = "Use Kev's noul decision for review, or the planner model in a separate tool-free chat context. Neither bypasses deterministic approval requirements."; };
     safety.enable = lib.mkOption { type = types.bool; default = true;
       description = "Review mutations with a separate local model context. Unknown mutations still require human approval."; };
     safety.model = lib.mkOption {
-      description = "Local Ollama model used in a separate tool-free review context. Defaults to the planner model. Review does not replace deterministic approval rules."; type = types.str; default = cfg.ollama.model; };
+      description = "Model alias used in a separate tool-free review context. With the managed single-model server this must match planner.model. Review does not replace deterministic approval rules."; type = types.str; default = cfg.planner.model; };
     settings.sessionPrefixes = lib.mkOption {
       description = "Allowed session-bus service namespaces for generic discovery and calls. Each entry matches its exact name and dot-separated descendants; empty entries match nothing. Defaults cover KDE, MPRIS, the overlay, and the Aurora desktop adapter. Sensitive services remain excluded."; type = types.listOf types.str; default = [ "org.kde." "org.mpris." "org.example.VoiceOverlay" "org.aurora.Desktop" ]; };
     settings.systemPrefixes = lib.mkOption {
@@ -262,21 +284,51 @@ in {
     };
     ttsPort = lib.mkOption {
       description = "Loopback TCP port for the local OpenAI-compatible speech endpoint. Must be free on the host."; type = types.port; default = 7788; };
-    ollama.enable = lib.mkOption { type = types.bool; default = true;
-      description = "Manage the system Ollama service in local-only mode."; };
-    ollama.model = lib.mkOption {
-      description = "Local Ollama planner model tag. Provisioning pulls this model when missing. Cloud models are rejected; changing size does not grant more permissions."; type = types.str; default = "qwen3:4b"; example = "qwen3:8b"; };
+    inferencePackage = lib.mkOption {
+      type = types.package; default = packages.llama-server;
+      defaultText = lib.literalExpression "self.packages.<system>.llama-server";
+      description = "Shared llama.cpp package for Kev and the planner. Uses nixpkgs at version 0.7.0 or newer, otherwise a pinned compatibility build. A GPU-enabled package can be supplied here.";
+    };
+    inference.port = lib.mkOption { type = types.port; default = 8008;
+      description = "Loopback port shared by Kev and planner APIs on the managed llama.cpp router."; };
+    inference.startupTimeoutSeconds = lib.mkOption { type = types.ints.between 30 600; default = 180;
+      description = "Startup deadline while the shared router loads all managed models and TTS becomes ready. Does not extend per-turn deadlines."; };
+    planner = {
+      model = lib.mkOption { type = types.str; default = "hf.co/Qwen/Qwen3-4B-GGUF:Q4_K_M";
+        description = "Planner GGUF name in hf.co/owner/repository:QUANT format. Provisioning resolves one exact GGUF and fails on missing or ambiguous matches. Also used as the local API model alias."; };
+      manageService = lib.mkOption { type = types.bool; default = true;
+        description = "Include the planner in the managed llama.cpp router and provision its GGUF. Disable to use an existing loopback OpenAI-compatible chat server."; };
+      url = lib.mkOption { type = types.str; default = "${routerUrl}/v1";
+        defaultText = lib.literalExpression ''"http://127.0.0.1:<inference.port>/v1"'';
+        description = "Loopback OpenAI-compatible chat API URL including /v1. A custom URL requires manageService=false."; };
+      modelFile = lib.mkOption { type = types.str; default = "${assetRoot}/planner.gguf";
+        defaultText = lib.literalExpression ''"<assetRoot>/planner.gguf"'';
+        description = "Local planner GGUF path. Managed named provisioning writes planner.gguf. For manually installed files, disable models.enable."; };
+      contextSize = lib.mkOption { type = types.ints.between 4096 131072; default = 32768;
+        description = "Planner context capacity in tokens, including action schemas, observations and response. Larger values require more memory. The selected model must support this capacity."; };
+      gpuLayers = lib.mkOption { type = types.ints.unsigned; default = 0;
+        description = "Planner layers to offload. Zero selects CPU. Supply a GPU-enabled inferencePackage before increasing this."; };
+    };
   };
   config = lib.mkIf cfg.enable {
     assertions = [
+      { assertion = !managedPlanner || cfg.planner.url == "${routerUrl}/v1";
+        message = "A custom planner URL requires planner.manageService=false."; }
+      { assertion = !managedKev || cfg.kev.url == routerUrl;
+        message = "A custom Kev URL requires kev.manageService=false."; }
+      { assertion = managedModels == [] || (cfg.inference.port != cfg.ttsPort
+          && (!(cfg.webSearch.enable && cfg.webSearch.manageService) || cfg.inference.port != cfg.webSearch.port));
+        message = "The inference router must use a different port from TTS and managed search."; }
+      { assertion = !(managedKev && managedPlanner) || kevAlias != plannerAlias;
+        message = "Kev and the planner need distinct model names in the router preset."; }
+      { assertion = lib.all (value: !(lib.hasInfix "\n" value || lib.hasInfix "\r" value || lib.hasInfix "#" value || lib.hasInfix ";" value))
+          (managedModels ++ lib.optional managedKev cfg.kev.modelFile ++ lib.optional managedPlanner cfg.planner.modelFile)
+          && lib.all (value: !(lib.hasInfix "]" value || lib.hasInfix "[" value)) managedModels;
+        message = "Managed model names and paths must be single-line INI values without comment characters; names cannot contain brackets."; }
+      { assertion = !(managedPlanner && cfg.safety.enable && cfg.safety.backend == "planner") || cfg.safety.model == cfg.planner.model;
+        message = "safety.model must match planner.model when using the managed planner for review."; }
       { assertion = cfg.safety.backend != "kev" || cfg.kev.enable;
         message = "Aurora safety.backend=kev requires kev.enable=true."; }
-      { assertion = !(cfg.kev.enable && cfg.kev.manageService) || cfg.kev.url == "http://127.0.0.1:${toString cfg.kev.port}";
-        message = "A custom Kev URL requires kev.manageService=false."; }
-      { assertion = !(cfg.kev.enable && cfg.kev.manageService) || cfg.kev.port != cfg.ttsPort;
-        message = "Kev and TTS must use different ports."; }
-      { assertion = !(cfg.kev.enable && cfg.kev.manageService && cfg.webSearch.enable && cfg.webSearch.manageService) || cfg.kev.port != cfg.webSearch.port;
-        message = "Kev and search must use different ports."; }
       { assertion = lib.hasPrefix "/" cfg.modelDirectory;
       message = "programs.aurora-assistant.modelDirectory must be absolute."; }
       { assertion = !(cfg.webSearch.enable && cfg.webSearch.manageService) ||
@@ -294,8 +346,7 @@ in {
       description = "Provision named local Aurora models";
       wantedBy = [ "multi-user.target" ];
       wants = [ "network-online.target" ];
-      after = [ "network-online.target" ] ++ lib.optional cfg.ollama.enable "ollama.service";
-      requires = lib.optional cfg.ollama.enable "ollama.service";
+      after = [ "network-online.target" ];
       restartTriggers = [ modelSpec ];
       environment = { HF_HUB_OFFLINE = "0"; HF_HUB_DISABLE_TELEMETRY = "1";
         XDG_CACHE_HOME = "/var/cache/aurora-models"; };
@@ -361,8 +412,6 @@ in {
       requires = [ "aurora-search-secret.service" ];
       after = [ "aurora-search-secret.service" ];
     };
-    services.ollama = lib.mkIf cfg.ollama.enable { enable = true; host = "127.0.0.1"; };
-    systemd.services.ollama.environment = lib.mkIf cfg.ollama.enable { OLLAMA_NO_CLOUD = "1"; };
     systemd.user.targets.aurora-assistant = {
       description = "Aurora local voice assistant";
       wantedBy = [ "graphical-session.target" ];
@@ -384,14 +433,16 @@ in {
       serviceConfig.ExecStart = lib.escapeShellArgs ([ "${cfg.package}/bin/aurora-tts"
         "--model-dir" "${assetRoot}/supertonic" "--model" cfg.models.tts "--port" (toString cfg.ttsPort) ] ++ lib.optionals cfg.wordSync [ "--alignment-model" cfg.realtimeSttModel ]);
     };
-    systemd.user.services.aurora-kev = lib.mkIf (cfg.kev.enable && cfg.kev.manageService) (lib.recursiveUpdate common {
-      description = "Local Kev decision server";
-      environment = offline;
+    systemd.user.services.aurora-inference = lib.mkIf (managedModels != []) (lib.recursiveUpdate common {
+      description = "Local Aurora llama.cpp model router";
+      environment = offline // { LLAMA_CACHE = "%t/aurora-inference/cache"; };
       serviceConfig.ExecStartPre = lib.optional cfg.models.enable modelCheck;
-      serviceConfig.ExecStart = lib.escapeShellArgs [ "${cfg.kev.package}/bin/llama-server"
-        "--model" cfg.kev.modelFile "--alias" cfg.kev.model "--host" "127.0.0.1"
-        "--port" (toString cfg.kev.port) "--ctx-size" "8192" "--parallel" "1"
-        "--n-gpu-layers" (toString cfg.kev.gpuLayers) ];
+      serviceConfig.RuntimeDirectory = "aurora-inference";
+      serviceConfig.RuntimeDirectoryMode = "0700";
+      serviceConfig.KillMode = "control-group";
+      serviceConfig.ExecStart = lib.escapeShellArgs [ "${cfg.inferencePackage}/bin/llama-server"
+        "--models-preset" routerPreset "--models-max" (toString (builtins.length managedModels))
+        "--host" "127.0.0.1" "--port" (toString cfg.inference.port) ];
     });
     systemd.user.services.aurora-desktop = lib.recursiveUpdate common {
       description = "Aurora desktop D-Bus adapter";
@@ -406,8 +457,8 @@ in {
       serviceConfig.ExecStartPre = lib.optional cfg.models.enable modelCheck;
       serviceConfig.RuntimeDirectory = "aurora-assistant";
       serviceConfig.RuntimeDirectoryMode = "0700";
-      wants = [ "aurora-voice-overlay.service" "aurora-tts.service" "aurora-desktop.service" ] ++ lib.optional (cfg.kev.enable && cfg.kev.manageService) "aurora-kev.service";
-      after = [ "aurora-voice-overlay.service" "aurora-tts.service" "aurora-desktop.service" ] ++ lib.optional (cfg.kev.enable && cfg.kev.manageService) "aurora-kev.service";
+      wants = [ "aurora-voice-overlay.service" "aurora-tts.service" "aurora-desktop.service" ] ++ lib.optional (managedModels != []) "aurora-inference.service";
+      after = [ "aurora-voice-overlay.service" "aurora-tts.service" "aurora-desktop.service" ] ++ lib.optional (managedModels != []) "aurora-inference.service";
       environment = offline;
       serviceConfig.ExecStart = "${cfg.package}/bin/aurora-assistant --config ${runtimeConfig}";
     };

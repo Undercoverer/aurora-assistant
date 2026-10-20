@@ -79,7 +79,8 @@
           };
         };
       in {
-        kev-server = if pkgs.lib.versionAtLeast pkgs.llama-cpp.version "0.6.0"
+        kev-server = self.packages.${system}.llama-server;
+        llama-server = if pkgs.lib.versionAtLeast pkgs.llama-cpp.version "0.7.0"
           then pkgs.llama-cpp
           else pkgs.callPackage ./nix/kev-server.nix {};
         docs = pkgs.runCommand "aurora-documentation" {} ''

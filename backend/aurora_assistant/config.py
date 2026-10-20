@@ -71,9 +71,18 @@ def _validate_policy(data):
         if type(prefixes) is not list or any(type(p) is not str for p in prefixes):
             raise ValueError(f'{key} must be a list of strings')
 
-    for section_name in ('presentation', 'conversation', 'diagnostics'):
+    for section_name in ('presentation', 'conversation', 'diagnostics', 'inference'):
         if type(data.get(section_name, {})) is not dict:
             raise ValueError(f'{section_name} must be an object')
+    inference = data.get('inference', {})
+    if 'url' in inference:
+        inference['url'] = local_url(inference['url'])
+    models = inference.get('models', [])
+    if type(models) is not list or len(models) > 2 or any(type(m) is not str or not m for m in models):
+        raise ValueError('inference.models must contain at most two model names')
+    if models and 'url' not in inference:
+        raise ValueError('Managed models require an inference.url')
+    _validate_number(inference, 'startupTimeoutSeconds', 30, 600, integer=True)
     if type(data.get('diagnostics', {}).get('logContent', False)) is not bool:
         raise ValueError('diagnostics.logContent must be boolean')
     for key, low, high in [('resultSeconds', 2, 60), ('errorSeconds', 3, 120), ('agentTimeoutSeconds', 10, 300)]:
@@ -84,8 +93,8 @@ def _validate_policy(data):
     _validate_number(data.get('kev', {}), 'timeoutSeconds', 1, 60)
     if 'url' in data.get('kev', {}):
         data['kev']['url'] = local_url(data['kev']['url'])
-    if data.get('safety', {}).get('backend', 'ollama') not in ('kev', 'ollama'):
-        raise ValueError('safety.backend must be kev or ollama')
+    if data.get('safety', {}).get('backend', 'planner') not in ('kev', 'planner'):
+        raise ValueError('safety.backend must be kev or planner')
 
 
 def _validate_apps(apps):
