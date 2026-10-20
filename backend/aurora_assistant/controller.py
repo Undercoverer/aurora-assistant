@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from .actions import validate
-from .telemetry import phase, content, new_turn, turn_id
+from .telemetry import phase, content, new_turn, turn_id, failure
 
 
 class Controller:
@@ -118,9 +118,10 @@ class Controller:
             raise
         except Exception as exc:
             # Never log transcripts, generated content, or raw model responses.
+            failure('request.failed', exc)
             logging.warning("Turn failed (%s)", type(exc).__name__)
             await self.overlay.state("error")
-            await self.overlay.message("The request could not be completed. Run aurora-report for details.")
+            await self.overlay.message(f"The request could not be completed ({type(exc).__name__}, request {turn_id.get()}). Run aurora-report for details.")
             await asyncio.sleep(self.presentation.get("errorSeconds", 10))
         finally:
             if not self.follow_up:

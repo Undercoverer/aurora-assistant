@@ -144,3 +144,26 @@ one-second latency guarantee has been verified. Check phase durations before
 changing model sizes. TTS alignment adds work; `wordSync = false` disables word
 alignment when troubleshooting synthesis latency. The small common-command route
 avoids the larger planner, while unfamiliar commands may still need multiple rounds.
+
+## Overlay errors with no corresponding journal events
+
+The overlay includes the exception type and request ID when a request fails.
+`aurora-report` also queries the running controller directly for its most recent
+128 metadata events. This buffer works independently of Python logging and
+journal capture, excludes transcript/reply text, and disappears when the
+controller exits. Collect the report after reproducing the problem, before
+restarting the service:
+
+```sh
+aurora-report --since '10 minutes ago' --clipboard
+# Inspect only the live controller's metadata:
+aurora-control diagnostics
+```
+
+The report includes the controller PID and the service's MainPID. A mismatch
+means the socket belongs to a different process, such as a manually launched
+controller. An empty capability catalog means no interfaces have been recorded;
+it does not establish that the desktop has no D-Bus capabilities. HTTP failures
+include a status code and code locations, without copying model response bodies.
+An older controller may return `Invalid approval command` for the new diagnostic
+query; update the flake input, rebuild, and restart `aurora-assistant.target`.

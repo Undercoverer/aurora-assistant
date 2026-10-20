@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+from .approval import control_request
 
 USER_UNITS = ['aurora-assistant.target', 'graphical-session.target', 'aurora-controller.service', 'aurora-tts.service', 'aurora-desktop.service',
               'aurora-voice-overlay.service', 'aurora-inference.service', 'pipewire.service', 'wireplumber.service']
@@ -38,7 +39,7 @@ def collect(since):
                 'Journal messages may contain personal data, especially with diagnostics.logContent enabled.']
     properties = ('Id,LoadState,UnitFileState,ActiveState,SubState,Result,ConditionResult,AssertResult,'
                   'ExecMainCode,ExecMainStatus,ExecMainStartTimestamp,ExecMainExitTimestamp,'
-                  'ActiveEnterTimestamp,InactiveEnterTimestamp,NRestarts,ExecStart,FragmentPath,InvocationID')
+                  'ActiveEnterTimestamp,InactiveEnterTimestamp,NRestarts,MainPID,ExecStart,FragmentPath,InvocationID')
     for user, units in ((True, USER_UNITS), (False, SYSTEM_UNITS)):
         status, error, code = run(['systemctl', *(['--user'] if user else []), 'show', *units,
                                    '--property=' + properties])
@@ -52,6 +53,16 @@ def collect(since):
                 sections.append('CONTROL UNAVAILABLE: the controller is not running. '
                     'From the configured Plasma user session, run: systemctl --user restart aurora-assistant.target. '
                     'If startup fails, inspect the target, ConditionResult and service results above.')
+    sections.append('\nLIVE CONTROLLER EVENTS (bounded metadata; independent of journal)')
+    try:
+        live = control_request({'command': 'diagnostics'})
+        sections.append(json.dumps(live, indent=2))
+        service_pid = states.get('aurora-controller.service', {}).get('MainPID')
+        if service_pid and service_pid != str(live.get('pid')) and 'pid' in live:
+            sections.append('CONTROLLER PID MISMATCH: the control socket belongs to a different process '
+                            'than aurora-controller.service. Check for a manually started controller.')
+    except (OSError, ValueError) as exc:
+        sections.append('Live controller diagnostics unavailable: ' + type(exc).__name__)
     entries = []
     for user, units in ((True, USER_UNITS), (False, SYSTEM_UNITS)):
         output, error, code = run(journal_command(units, since, user))

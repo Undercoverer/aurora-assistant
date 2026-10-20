@@ -9,7 +9,7 @@ import secrets
 import socket
 import stat
 import struct
-from .telemetry import event, phase
+from .telemetry import event, phase, snapshot
 
 
 def socket_path():
@@ -53,6 +53,8 @@ class Approval:
         self.path.chmod(0o600)
 
     def dispatch(self, request):
+        if request == {'command': 'diagnostics'}:
+            return snapshot()
         if request == {'command': 'capabilities'}:
             return {'documentation': self.catalog.markdown() if self.catalog else 'No capabilities observed.'}
         if request == {'command': 'sources'}:
@@ -142,7 +144,7 @@ def control_request(request):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('command', choices=['pending', 'sources', 'capabilities', 'approve', 'deny'])
+    parser.add_argument('command', choices=['pending', 'sources', 'capabilities', 'diagnostics', 'approve', 'deny'])
     parser.add_argument('id', nargs='?')
     args = parser.parse_args()
     if args.command in {'approve', 'deny'} and not args.id:
