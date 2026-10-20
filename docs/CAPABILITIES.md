@@ -14,7 +14,10 @@ not an embedding/vector index. No additional embedding model or service is neede
 The larger planner receives the retrieved documents too.
 
 Kev may select a readable property or a method with no input arguments when one
-candidate covers the entire request. A request needing parameters, ambiguous
+candidate covers the entire request. Observed writable boolean properties also
+offer exact true/false candidates, still subject to local approval. Successful
+desktop reads add installed application, theme and color IDs as typed candidates.
+A request needing other parameters, ambiguous
 semantics, multiple generic calls, or further discovery escalates. Kev does not
 invent parameter values. Common supported requests have separate fully parsed
 candidates, including multi-action requests such as "mute the speakers and pause

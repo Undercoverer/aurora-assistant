@@ -2,7 +2,7 @@ import asyncio
 import io
 import json
 import time
-from .actions import schema
+from .actions import schema, PlanValidationError
 from .telemetry import event, phase, turn_id, content
 
 
@@ -54,10 +54,15 @@ class Inference:
                 "POST", self.config["llm"]["url"] + "/chat/completions",
                 json=payload, timeout=timeout,
             )
-        response.raise_for_status()
-        output = response.json()["choices"][0]["message"]["content"]
-        content("model.output", output)
-        return json.loads(output)
+            response.raise_for_status()
+            output = response.json()["choices"][0]["message"]["content"]
+            if not isinstance(output, str):
+                raise PlanValidationError('Model response has no text content')
+            content("model.output", output)
+            try:
+                return json.loads(output)
+            except json.JSONDecodeError as exc:
+                raise PlanValidationError('Model response is not valid JSON') from exc
 
     async def wait_ready(self):
         inference = self.config.get('inference', {})
@@ -106,6 +111,9 @@ class Inference:
         system = (
             "You are a local desktop assistant. Select only actions explicitly requested by the user. "
             "If ambiguous, return no actions and ask a short clarification. Never claim success before execution. "
+            "You CAN read the system clock: use desktop_read with argument clock for current time/date. "
+            "For volume and speaker mute use volume (integer 0..100) and mute (boolean). "
+            "These supported actions do not need root or privilege escalation. Do not substitute generic D-Bus calls for them. "
             "Use open_url to open an explicit HTTP(S) URL in the default browser through the desktop portal. "
             "Use desktop_read to discover installed themes/colors/audio/media/applications. Use launch_app with an observed desktop ID; no app alias is required. Use dbus_list and dbus_inspect "
             "to discover available settings; do not invent service names, methods, properties or theme identifiers. "

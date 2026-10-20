@@ -99,8 +99,7 @@ class PlanExpiryTests(unittest.IsolatedAsyncioTestCase):
         agent, desktop, approval = self.agent(time.monotonic() + 20)
         agent.config['settings'] = {'enable': False}
         agent.inference.plan.return_value = {'actions': [{'name': 'theme', 'argument': 'Breeze'}], 'reply': ''}
-        with self.assertRaises(ValueError):
-            await agent.run('theme')
+        self.assertIn('invalid action plan', await agent.run('theme'))
         desktop.prepare.assert_not_awaited()
 
 

@@ -9,6 +9,10 @@ class Action:
     argument: str | int | bool | dict | None = None
 
 
+class PlanValidationError(ValueError):
+    """A static validation reason safe to include in metadata diagnostics."""
+
+
 def schema(apps, dbus_actions=None, settings=False, web_search=False):
     dbus_actions = dbus_actions or {}
     def variant(name, kind=None):
@@ -41,18 +45,18 @@ def schema(apps, dbus_actions=None, settings=False, web_search=False):
 def validate(plan, apps, dbus_actions=None, settings=False, web_search=False):
     dbus_actions = dbus_actions or {}
     if type(plan) is not dict or set(plan) != {"actions", "reply"}:
-        raise ValueError("Invalid plan fields")
+        raise PlanValidationError("Invalid plan fields")
     if type(plan["reply"]) is not str or len(plan["reply"]) > 1000:
-        raise ValueError("Invalid reply")
+        raise PlanValidationError("Invalid reply")
     if type(plan["actions"]) is not list or len(plan["actions"]) > 4:
-        raise ValueError("Invalid action count")
+        raise PlanValidationError("Invalid action count")
     result = []
     for item in plan["actions"]:
         if type(item) is not dict or set(item) != {"name", "argument"}:
-            raise ValueError("Invalid action fields")
+            raise PlanValidationError("Invalid action fields")
         name, arg = item["name"], item["argument"]
         if type(name) is not str:
-            raise ValueError("Action name must be a string")
+            raise PlanValidationError("Action name must be a string")
         valid = ((name == "volume" and type(arg) is int and 0 <= arg <= 100)
                  or (name == "mute" and type(arg) is bool)
                  or (name == "media" and type(arg) is str and arg in
@@ -65,7 +69,7 @@ def validate(plan, apps, dbus_actions=None, settings=False, web_search=False):
             from .settings import valid_action
             valid = valid_action(name, arg)
         if not valid:
-            raise ValueError("Unsupported action or argument")
+            raise PlanValidationError("Unsupported action or argument")
         result.append(Action(name, arg))
     return result, plan["reply"]
 

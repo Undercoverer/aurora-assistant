@@ -24,7 +24,7 @@ def action_schemas():
         'launch_app': text,
         'open_url': {'type': 'string', 'maxLength': 2048},
         'color_scheme': text,
-        'desktop_read': {'enum': ['audio', 'media', 'themes', 'colors', 'applications']},
+        'desktop_read': {'enum': ['audio', 'media', 'themes', 'colors', 'applications', 'clock']},
         'dbus_list': {'enum': ['session', 'system']},
         'dbus_inspect': object_schema({k: v for k, v in endpoint.items() if k != 'interface'}),
         'dbus_get': object_schema({**endpoint, 'property': text}),
@@ -37,7 +37,7 @@ def action_schemas():
         'color_scheme': 'Apply an installed color scheme ID obtained from desktop_read colors.',
         'open_url': 'Open an HTTP(S) URL in the default browser through the desktop portal.',
         'launch_app': 'Open a visible installed desktop ID obtained from desktop_read applications.',
-        'desktop_read': 'Read installed apps, themes, colors, default audio state, or live MPRIS players without mutation.',
+        'desktop_read': 'Read the local clock, installed apps, themes, colors, default audio state, or live MPRIS players without mutation.',
         'dbus_list': 'List currently running services in the permitted scope of the selected bus.',
         'dbus_inspect': 'Read interfaces, signatures, properties and child paths from a live object.',
         'dbus_get': 'Read a property on an observed interface using its live signature.',
@@ -59,7 +59,7 @@ def valid_action(name, arg):
     if name in {'theme', 'color_scheme'}:
         return type(arg) is str and bool(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_. -]{0,200}', arg))
     if name == 'desktop_read':
-        return type(arg) is str and arg in {'audio', 'media', 'themes', 'colors', 'applications'}
+        return type(arg) is str and arg in {'audio', 'media', 'themes', 'colors', 'applications', 'clock'}
     if name == 'dbus_list':
         return type(arg) is str and arg in {'session', 'system'}
     fields = {

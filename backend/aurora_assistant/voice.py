@@ -2,7 +2,7 @@
 import threading
 import time
 from .config import require_assets
-from .telemetry import event, content, phase
+from .telemetry import event, content, phase, failure
 
 
 class Voice:
@@ -57,33 +57,57 @@ class Voice:
 
     def _capture(self, sd, np):
         try:
+            event('capture.opening', requested_device=self.config.get('input_device'))
             with sd.RawInputStream(samplerate=16000, blocksize=1280, channels=1,
                                    dtype="int16", device=self.config.get("input_device")) as stream:
+                event('capture.opened', device=stream.device, sample_rate=16000)
+                frames = overflows = 0
+                peak = score_peak = 0.0
+                next_report = time.monotonic() + 5
                 while not self.closed.is_set():
                     data, overflow = stream.read(1280)
-                    if overflow:
-                        continue
+                    # Overflow reports earlier lost samples; the returned block
+                    # still contains valid audio and must not be discarded.
+                    overflows += int(overflow)
                     pcm = bytes(data)
+                    samples = np.frombuffer(pcm, dtype=np.int16)
+                    if not len(samples):
+                        raise RuntimeError('Microphone returned an empty audio block')
+                    level = float(np.sqrt(np.mean((samples.astype(np.float32) / 32768) ** 2)))
+                    peak = max(peak, level)
+                    frames += 1
+                    if frames == 1:
+                        event('capture.first_audio')
                     if self.feeding.is_set():
                         self.recorder.feed_audio(pcm)
-                        samples = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768
-                        self.emit("level", min(1., float(np.sqrt(np.mean(samples ** 2))) * 4))
+                        self.emit("level", min(1., level * 4))
                     elif self.armed.is_set():
-                        scores = self.wake.predict(np.frombuffer(pcm, dtype=np.int16))
-                        if max(scores.values(), default=0) >= self.config.get("wake_threshold", 0.5):
+                        scores = self.wake.predict(samples)
+                        score = float(max(scores.values(), default=0))
+                        score_peak = max(score_peak, score)
+                        if score >= self.config.get("wake_threshold", 0.5):
                             event("wake.detected")
                             self.armed.clear()
                             self.feeding.set()
                             self.emit("state", "wake")
                             self.awake.set()
+                    if time.monotonic() >= next_report:
+                        event('capture.health', blocks=frames, overflows=overflows,
+                              max_rms=round(peak, 6), max_wake_score=round(score_peak, 6),
+                              threshold=self.config.get('wake_threshold', 0.5),
+                              armed=self.armed.is_set(), feeding=self.feeding.is_set())
+                        peak = score_peak = 0.0
+                        next_report = time.monotonic() + 5
         except Exception as exc:
             self.capture_error = exc
+            failure('capture.failed', exc)
             self.awake.set()
             self.recorder.abort()
 
     def next(self, follow_up=False, follow_up_seconds=12):
-        self.recorder.clear_audio_queue()
-        self.wake.reset()
+        with phase('capture.prepare'):
+            self.recorder.clear_audio_queue()
+            self.wake.reset()
         self.started.clear()
         self.awake.clear()
         if follow_up:
@@ -94,6 +118,8 @@ class Voice:
             event('capture.follow_up', timeout_seconds=follow_up_seconds)
         else:
             self.armed.set()
+            event('wake.armed', threshold=self.config.get('wake_threshold', 0.5),
+                  model=self.config.get('wake_model'))
         while not self.awake.wait(0.2):
             if self.closed.is_set() or self.capture_error:
                 break

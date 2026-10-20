@@ -79,7 +79,7 @@ class ApprovalTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(approval.pending)
 
 class KevTests(unittest.IsolatedAsyncioTestCase):
-    async def test_fast_route_skips_large_planner_but_keeps_review(self):
+    async def test_exact_routine_route_uses_local_policy_without_second_model(self):
         inference, desktop, approval, overlay = [AsyncMock() for _ in range(4)]
         inference.quick_plan.return_value = plan('mute', True)
         inference.review.return_value = {'decision': 'allow', 'reason': 'Requested'}
@@ -89,7 +89,8 @@ class KevTests(unittest.IsolatedAsyncioTestCase):
         agent = SettingsAgent({'apps': {}, 'kev': {'enable': True}}, inference, desktop, approval, overlay)
         self.assertEqual(await agent.run('Mute speakers'), 'Muted.')
         inference.plan.assert_not_awaited()
-        inference.review.assert_awaited_once()
+        inference.review.assert_not_awaited()
+        approval.request.assert_not_awaited()
 
     async def test_fast_failure_escalates_without_running_anything(self):
         inference, desktop, approval, overlay = [AsyncMock() for _ in range(4)]

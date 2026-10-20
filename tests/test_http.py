@@ -51,6 +51,10 @@ class LocalHTTPTests(unittest.IsolatedAsyncioTestCase):
             data = json.loads(request.content)
             self.assertEqual(data['model'], MODEL)
             self.assertNotIn('messages', data)
+            if 'capability' in data['questions']:
+                options = data['questions']['capability']['criteria']
+                return httpx.Response(200, json={'answers': {'capability': {'choice': 'escalate',
+                    'probabilities': {k: float(k == 'escalate') for k in options}}}})
             score = probabilities.pop(0)
             return httpx.Response(200, json={'answers': {'route': {'choice': 'apply',
                 'probabilities': {'apply': score, 'escalate': 1-score}}}})

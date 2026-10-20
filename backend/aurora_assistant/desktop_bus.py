@@ -67,8 +67,13 @@ class DesktopService(ServiceInterface):
 
     @method()
     async def Read(self, topic: 's') -> 's':
-        """Read audio, media, installed themes/colors, or application IDs; returns JSON."""
+        """Read the clock, audio, media, themes/colors, or application IDs as JSON."""
         try:
+            if topic == 'clock':
+                from datetime import datetime
+                now = datetime.now().astimezone()
+                return json.dumps({'iso': now.isoformat(), 'timezone': now.tzname(),
+                                   'reply': now.strftime('It is %H:%M %Z on %A, %B %d, %Y.')})
             if topic == 'media':
                 return json.dumps(await self.media.players())
             if topic == 'applications':

@@ -2,9 +2,9 @@
 import json
 import asyncio
 import time
-from .actions import validate
+from .actions import validate, PlanValidationError
 from .settings import READ_ACTIONS
-from .telemetry import event, phase
+from .telemetry import event, phase, failure
 
 
 class SettingsAgent:
@@ -20,6 +20,7 @@ class SettingsAgent:
         kev_active = kev.get('enable', False)
         kev_rounds = 0
         announced = False
+        invalid_plans = 0
         for _ in range(self.config.get('settings', {}).get('maxRounds', 5)):
             plan = None
             if kev_active and kev_rounds < kev.get('maxRounds', 2):
@@ -27,20 +28,31 @@ class SettingsAgent:
                 try:
                     plan = await self.inference.quick_plan(text, evidence=evidence)
                 except Exception as exc:
-                    event("kev.route_failed", error_type=type(exc).__name__)
-            if plan is None:
+                    failure('kev.route_failed', exc)
+            try:
+                if plan is None:
+                    kev_active = False
+                    if kev.get('enable', False) and kev.get('announceEscalation', True) and not announced:
+                        announced = True
+                        plan = await self.with_notice(self.inference.plan(text, evidence=evidence),
+                                                      kev.get('escalationMessage', 'Checking that in more detail.'))
+                    else:
+                        plan = await self.inference.plan(text, evidence=evidence)
+                actions, reply = validate(
+                    plan, self.config['apps'], self.config.get('dbus_actions', {}),
+                    settings=self.config.get('settings', {}).get('enable', True),
+                    web_search=self.config.get('webSearch', {}).get('enable', False),
+                )
+            except PlanValidationError as exc:
+                event('plan.invalid', reason=str(exc))
+                invalid_plans += 1
+                if invalid_plans > 1:
+                    self.failed = True
+                    return 'The model returned an invalid action plan twice. No actions were run. Run aurora-report for details.'
+                evidence.append({'validation_error': str(exc),
+                                 'instruction': 'Return a corrected plan matching the supplied action schema exactly.'})
                 kev_active = False
-                if kev.get('enable', False) and kev.get('announceEscalation', True) and not announced:
-                    announced = True
-                    plan = await self.with_notice(self.inference.plan(text, evidence=evidence),
-                                                  kev.get('escalationMessage', 'Checking that in more detail.'))
-                else:
-                    plan = await self.inference.plan(text, evidence=evidence)
-            actions, reply = validate(
-                plan, self.config['apps'], self.config.get('dbus_actions', {}),
-                settings=self.config.get('settings', {}).get('enable', True),
-                web_search=self.config.get('webSearch', {}).get('enable', False),
-            )
+                continue
             if any(a.name == 'web_search' for a in actions):
                 if len(actions) != 1 or evidence:
                     return 'Please ask the web question separately from desktop actions.'
@@ -51,7 +63,14 @@ class SettingsAgent:
             reads = [a for a in actions if a.name in READ_ACTIONS]
             if reads:
                 # Proposed writes in a discovery round are discarded and replanned.
-                evidence.extend(await self._observe(reads))
+                observations = await self._observe(reads)
+                evidence.extend(observations)
+                if len(actions) == 1 and actions[0].name == 'desktop_read' and actions[0].argument == 'clock':
+                    try:
+                        return json.loads(observations[0]['result'])['reply']
+                    except (ValueError, KeyError, TypeError):
+                        self.failed = True
+                        return 'The system clock could not be read. Run aurora-report for details.'
                 kev_active = kev.get('enable', False)
                 continue
             # Mute the microphone last so earlier operations do not lose input.
@@ -59,6 +78,7 @@ class SettingsAgent:
             try:
                 prepared = [await self.desktop.prepare(action) for action in actions]
             except Exception as exc:
+                failure('desktop.prepare.failed', exc)
                 kev_active = False
                 evidence.append({'preparation_error': str(exc)[:1000], 'actions': plan['actions']})
                 continue  # No mutations have occurred; let the larger model resolve it.
@@ -97,10 +117,23 @@ class SettingsAgent:
 
     async def _review(self, text, prepared):
         review = {'decision': 'allow', 'reason': 'Local policy permits the supported desktop actions.'}
+        # An exact, completely parsed request for known reversible controls is
+        # already explicit authorization. Never extend this to generic D-Bus.
+        from .kev import common_plan
+        candidate = common_plan(text)
+        routine = {'volume', 'mute', 'microphone_mute', 'media', 'open_url'}
+        actual = [p.get('action') for p in prepared]
+        if (candidate and actual and all(a and a.get('name') in routine for a in actual)
+                and not any(p.get('requires_approval', True) for p in prepared)):
+            expected = sorted(candidate['actions'], key=lambda a: a['name'] == 'microphone_mute' and a['argument'] is True)
+            if actual == expected:
+                event('review.local', policy='explicit_routine_actions')
+                return review
         if self.config.get('safety', {}).get('enable', True):
             try:
                 review = await self.inference.review(text, prepared)
-            except Exception:
+            except Exception as exc:
+                failure('review.failed', exc)
                 review = {'decision': 'ask', 'reason': 'The local reviewer is unavailable or returned an invalid result.'}
         return review
 

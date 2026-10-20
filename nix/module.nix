@@ -217,7 +217,7 @@ in {
     safety.backend = lib.mkOption { type = types.enum [ "kev" "planner" ]; default = if cfg.kev.enable then "kev" else "planner";
       description = "Use Kev's noul decision for review, or the planner model in a separate tool-free chat context. Neither bypasses deterministic approval requirements."; };
     safety.enable = lib.mkOption { type = types.bool; default = true;
-      description = "Review mutations with a separate local model context. Unknown mutations still require human approval."; };
+      description = "Review plans not covered by exact, explicitly requested routine actions with a separate local model context. Generic D-Bus mutations still require human approval; routine policy cannot override an adapter approval requirement."; };
     safety.model = lib.mkOption {
       description = "Model alias used in a separate tool-free review context. With the managed single-model server this must match planner.model. Review does not replace deterministic approval rules."; type = types.str; default = cfg.planner.model; };
     settings.sessionPrefixes = lib.mkOption {

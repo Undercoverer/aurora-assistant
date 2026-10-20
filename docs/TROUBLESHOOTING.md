@@ -167,3 +167,28 @@ it does not establish that the desktop has no D-Bus capabilities. HTTP failures
 include a status code and code locations, without copying model response bodies.
 An older controller may return `Invalid approval command` for the new diagnostic
 query; update the flake input, rebuild, and restart `aurora-assistant.target`.
+
+## Wake word produces no response
+
+The default built-in wake phrase is **Hey Jarvis** (`models.wakeWord =
+"hey_jarvis"`). The assistant's product name does not change the phrase learned
+by the wake model. A custom phrase requires a trained model.
+
+Capture diagnostics appear automatically in the terminal, journal, and
+`aurora-control diagnostics`. No audio or spoken words are stored by these
+checks. After startup, speak the configured phrase and collect a report without
+restarting. Look for:
+
+- `capture.opening` then `capture.opened`: the selected audio device opened.
+- `capture.first_audio`: at least one audio block arrived.
+- `capture.prepare.done` then `wake.armed`: the wake detector is listening.
+- `capture.health`: every five seconds while audio arrives, reports block and
+  overflow counts, peak RMS level, peak wake score, threshold, and gate state.
+- `capture.failed`: an exception interrupted audio capture or wake detection.
+
+A zero RMS value means the received samples were silent during that interval.
+A nonzero RMS value with a low wake score means audio arrived but did not meet
+the model threshold. An opened stream with no first-audio event means the first
+read has not completed. These distinctions must be checked before changing
+thresholds or selecting another microphone. Overflow counts indicate lost
+older samples; the returned block is still processed.
