@@ -53,6 +53,19 @@ async def run(config, text=None):
         registry = config.get("dbus_actions", {})
         executor = Executor(config["apps"], config["commands"], dbus_actions=DBusActions(registry))
         controller = Controller(overlay, inference, executor, config["apps"], registry, presentation=config.get("presentation", {}), conversation=config.get("conversation", {}))
+        learner = None
+        if config.get('catalog', {}).get('enrich', False):
+            from pathlib import Path
+            import os
+            from .catalog_notes import CatalogNotes
+            from .catalog_learning import CatalogLearner
+            path = None
+            if config['catalog'].get('persist', True):
+                cache = Path(os.environ.get('XDG_CACHE_HOME', str(Path.home() / '.cache')))
+                path = cache / 'aurora-assistant' / 'capability-notes.json'
+            inference.catalog.notes = CatalogNotes(config['llm']['model'], path)
+            learner = CatalogLearner(inference, config['catalog'])
+            controller.catalog_learner = learner
         approval = Approval()
         approval.catalog = inference.catalog
         cleanup.push_async_callback(approval.close)
@@ -74,6 +87,9 @@ async def run(config, text=None):
         discovery = asyncio.create_task(maintain(inference, controller.agent.desktop.bus,
                                                 config.get('settings', {}).get('enable', True)))
         cleanup.push_async_callback(stop_task, discovery)
+        if learner is not None:
+            learning = asyncio.create_task(learner.run())
+            cleanup.push_async_callback(stop_task, learning)
         if text is not None:
             await controller.handle(text)
             return

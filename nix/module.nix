@@ -51,6 +51,7 @@ let
     kev = { inherit (cfg.kev) enable url threshold timeoutSeconds maxRounds announceEscalation escalationMessage contextSize; model = kevAlias; };
     safety = { inherit (cfg.safety) enable backend; model = if managedPlanner && cfg.safety.model == cfg.planner.model then plannerAlias else cfg.safety.model; };
     diagnostics = { inherit (cfg.diagnostics) logContent; };
+    catalog = { inherit (cfg.catalog) enrich persist idleSeconds intervalSeconds timeoutSeconds; };
     presentation = { inherit (cfg.overlay) resultSeconds errorSeconds;
       agentTimeoutSeconds = cfg.conversation.timeoutSeconds; };
     conversation = { inherit (cfg.conversation) followUpSeconds maxFollowUps; };
@@ -258,6 +259,18 @@ in {
       description = "Deadline for each Kev decision; routing timeout escalates and review timeout requires approval."; };
     kev.threshold = lib.mkOption { type = types.numbers.between 0.5 1; default = 0.95;
       description = "Minimum selected-option probability for automatic routing or low-risk review. Generic D-Bus mutations still require approval."; };
+    catalog = {
+      enrich = lib.mkOption { type = types.bool; default = true;
+        description = "Use the local planner while idle to write unverified explanations of observed D-Bus members. No commands execute during enrichment. Wake/speech activity cancels the client request; server cancellation latency depends on the backend."; };
+      persist = lib.mkOption { type = types.bool; default = true;
+        description = "Cache up to 512 model explanations for seven days under the desktop user's XDG cache directory. Only explanations and signature fingerprints persist; live executable capabilities must be rediscovered. Cached text can contain service or application names."; };
+      idleSeconds = lib.mkOption { type = types.ints.between 15 3600; default = 60;
+        description = "Minimum quiet period before background catalog enrichment starts. No enrichment runs during an active turn or clarification wait."; };
+      intervalSeconds = lib.mkOption { type = types.ints.between 30 86400; default = 240;
+        description = "Minimum pause between background explanation attempts. Each attempt describes only one observed member; failures are not retried for an hour."; };
+      timeoutSeconds = lib.mkOption { type = types.ints.between 1 60; default = 15;
+        description = "Deadline for a background explanation request. Failure never prevents ordinary voice requests."; };
+    };
     diagnostics.logContent = lib.mkOption { type = types.bool; default = false;
       description = "Include transcripts, replies, model output and exception messages in the local journal. Off by default; timing and error events are always logged. Never records audio."; };
 

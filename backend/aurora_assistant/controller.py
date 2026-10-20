@@ -11,6 +11,7 @@ class Controller:
         self.agent = agent
         self.presentation = presentation or {}
         self.conversation = conversation or {}
+        self.catalog_learner = None
         self.follow_up = False
         self.follow_up_count = 0
         self.context = []
@@ -21,6 +22,8 @@ class Controller:
 
     def event(self, kind, value):
         if self.accept_events:
+            if self.catalog_learner is not None and kind in {"state", "partial"}:
+                self.catalog_learner.activity()
             self.pending[kind] = value
 
     async def visuals(self):
@@ -37,6 +40,8 @@ class Controller:
             await asyncio.sleep(1 / 30)
 
     async def handle(self, text):
+        if self.catalog_learner is not None:
+            self.catalog_learner.activity()
         self.accept_events = False
         self.pending.clear()
         async with self.visual_lock:
@@ -56,6 +61,8 @@ class Controller:
                     await self._handle(request if text.strip() else '')
             finally:
                 turn_id.reset(token)
+                if self.catalog_learner is not None:
+                    self.catalog_learner.activity(busy=self.follow_up)
 
     async def _handle(self, text):
         if not text.strip():

@@ -11,9 +11,10 @@ def words(text):
 
 
 class CapabilityCatalog:
-    def __init__(self):
+    def __init__(self, notes=None):
         self.objects = {}
         self.adapter = None
+        self.notes = notes
 
     def advertise(self, snapshot):
         """Replace the live adapter schema atomically; reject malformed metadata."""
@@ -62,11 +63,13 @@ class CapabilityCatalog:
         key = json.dumps(endpoint, sort_keys=True)
         # A new observation replaces the whole object, including removed members.
         self.objects.pop(key, None)
+        if not value.get('interfaces'):
+            return  # Empty tree roots must not evict useful member observations.
         self.objects[key] = (time.monotonic(), endpoint, copy.deepcopy(value))
         while len(self.objects) > 16:
             self.objects.pop(next(iter(self.objects)))
 
-    def documents(self):
+    def _observed_documents(self):
         docs = self.advertised()
         now = time.monotonic()
         for observed, endpoint, value in list(self.objects.values()):
@@ -110,6 +113,15 @@ class CapabilityCatalog:
                                     return docs
         return docs
 
+    def documents(self):
+        docs = self._observed_documents()
+        if self.notes is not None:
+            for doc in docs:
+                note = self.notes.get(doc)
+                if note:
+                    doc['semantic_note'] = note
+        return docs
+
     def search(self, query, limit=12):
         terms = words(query)
         # A small lexical context supplement for the generative planner.
@@ -122,7 +134,15 @@ class CapabilityCatalog:
         # Stable ordering preserves the cacheable capability prefix and gives
         # synonyms the same available tools. Kev supports 255 choices including
         # the explicit escalation option. Query text never filters capabilities.
-        return sorted(self.documents(), key=lambda doc: json.dumps(doc, sort_keys=True))[:254]
+        return sorted((d for d in self.documents() if 'candidate' in d or 'binding' in d),
+                      key=lambda doc: json.dumps(doc, sort_keys=True))[:254]
+
+    def status(self):
+        docs = self.documents()
+        return {'live_documents': len(docs),
+                'explained_live_documents': sum('semantic_note' in d for d in docs),
+                'stored_explanations': len(self.notes.entries) if self.notes is not None else 0,
+                'enrichment_enabled': self.notes is not None}
 
     def markdown(self):
         lines = ['# Observed D-Bus capabilities', '',
@@ -131,5 +151,7 @@ class CapabilityCatalog:
             target = doc['target']
             lines.extend([f"## {doc['kind']}: {doc['name']}", '',
                 doc.get('description', ''), '',
+                ('Unverified model explanation: ' + json.dumps(doc['semantic_note'], ensure_ascii=True))
+                    if 'semantic_note' in doc else '', '',
                 '```json', json.dumps({**target, **doc['detail']}, ensure_ascii=True, indent=2), '```', ''])
         return '\n'.join(lines)[:90000]

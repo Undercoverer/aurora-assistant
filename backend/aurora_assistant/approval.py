@@ -55,6 +55,8 @@ class Approval:
     def dispatch(self, request):
         if request == {'command': 'diagnostics'}:
             return snapshot()
+        if request == {'command': 'catalog-status'}:
+            return self.catalog.status() if self.catalog else {'live_documents': 0, 'enrichment_enabled': False}
         if request == {'command': 'capabilities'}:
             return {'documentation': self.catalog.markdown() if self.catalog else 'No capabilities observed.'}
         if request == {'command': 'sources'}:
@@ -144,7 +146,7 @@ def control_request(request):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('command', choices=['pending', 'sources', 'capabilities', 'diagnostics', 'approve', 'deny'])
+    parser.add_argument('command', choices=['pending', 'sources', 'capabilities', 'catalog-status', 'diagnostics', 'approve', 'deny'])
     parser.add_argument('id', nargs='?')
     args = parser.parse_args()
     if args.command in {'approve', 'deny'} and not args.id:

@@ -33,6 +33,7 @@ Initial provisioning requires internet access; normal voice operation is local.
 | `planner` | Generation and complex requests | `model`, `contextSize`, `gpuLayers` |
 | `models` | Asset provisioning | `enable`, `directory`, `revisions` |
 | `inference` | Shared llama.cpp service | `package`, `port`, `startupTimeoutSeconds` |
+| `catalog` | Idle-time D-Bus explanations | `enrich`, `persist`, `idleSeconds` |
 | `diagnostics` | Content logging | `logContent` |
 | `webSearch` | Optional online search through a local API | `enable`, `engines` |
 
@@ -94,3 +95,5 @@ rather than silently overriding each other. The complete mapping is in
 The [flake-parts/import-tree example](../examples/flake-parts) uses the same options:
 import the exported module into the host's NixOS module list, not directly into the
 flake-parts module scope. Existing Kev/planner settings need no migration.
+
+See [the semantic catalog](CAPABILITIES.md#idle-time-semantic-catalog) for cache behavior, limits and background resource controls.

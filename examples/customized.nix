@@ -30,6 +30,7 @@
     };
     planner.model = "hf.co/Qwen/Qwen3-4B-GGUF:Q4_K_M";
     diagnostics.logContent = false;
+    catalog = { enrich = true; persist = true; idleSeconds = 60; };
     # Online search is optional; ordinary voice operation remains local.
     webSearch.enable = false;
     # No application aliases or fixed D-Bus actions are required.

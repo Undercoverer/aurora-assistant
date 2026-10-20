@@ -52,15 +52,17 @@ def _validate_stt(stt):
     _validate_number(stt, 'max_utterance_seconds', 5, 300)
 
 def _validate_policy(data):
-    for section_name in ('settings', 'kev', 'safety', 'webSearch'):
+    for section_name in ('settings', 'kev', 'safety', 'webSearch', 'catalog'):
         section = data.get(section_name, {})
         if type(section) is not dict:
             raise ValueError(f'{section_name} must be an object')
-        for key in ('enable', 'announceEscalation'):
+        for key in ('enable', 'announceEscalation', 'enrich', 'persist'):
             if key in section and type(section[key]) is not bool:
                 raise ValueError(f'{section_name}.{key} must be boolean')
     if 'wordSync' in data['tts'] and type(data['tts']['wordSync']) is not bool:
         raise ValueError('tts.wordSync must be boolean')
+    for key, low, high in (('idleSeconds', 15, 3600), ('intervalSeconds', 30, 86400), ('timeoutSeconds', 1, 60)):
+        _validate_number(data.get('catalog', {}), key, low, high, integer=True)
     _validate_number(data.get('settings', {}), 'maxRounds', 1, 8, integer=True)
     _validate_number(data.get('kev', {}), 'maxRounds', 1, 4, integer=True)
     _validate_number(data.get('webSearch', {}), 'maxResults', 1, 8, integer=True)
