@@ -19,6 +19,12 @@ python311Packages.buildPythonApplication {
     substituteInPlace "$out/bin/mcdbus" --replace-fail 'mcdbus.server' 'mcdbus.aurora'
     mv "$out/bin/mcdbus" "$out/bin/aurora-mcdbus"
   '';
+  doInstallCheck = true;
+  installCheckPhase = ''
+    runHook preInstallCheck
+    AURORA_MCP_EXECUTABLE="$out/bin/aurora-mcdbus" python ${../tests/mcp/test_stdio.py}
+    runHook postInstallCheck
+  '';
   pythonImportsCheck = [ "mcdbus.aurora" ];
   meta = {
     description = "Experimental owner-bound, introspection-typed MCP D-Bus server for Aurora";
