@@ -21,11 +21,14 @@ prompt. Expiry is rechecked by the server before dispatch. Cancellation and
 failure stop later actions without automatic retries or a direct fallback.
 Existing desktop tokens are retained. Multi-action execution can partially succeed.
 
-Local client validation: backend suite 208 tests, three private-bus skips;
-MCP protocol/process suite 28 tests, four private-bus skips. The private-bus client
-integration runs in CI. These counts describe this change before CI acceptance,
-not KDE hardware validation. Target CPU benchmarks, semantic recall/reranking,
-and full desktop voice acceptance remain outstanding.
+The optional offline recall worker and evaluation CLI are implemented separately
+from execution. They retain lexical candidates and leave Kev routing unchanged.
+Cross-encoder selection and selected-schema generation are not implemented;
+accuracy, ambiguity and target-CPU measurements are prerequisites. See
+[RECALL_EVALUATION.md](RECALL_EVALUATION.md).
+
+Build and test evidence is recorded in [ACCEPTANCE.md](ACCEPTANCE.md). Automated
+checks do not establish full desktop voice acceptance or model quality.
 
 ## Measurement boundaries
 
@@ -45,11 +48,12 @@ completed_actions counts successful returned calls; a failed call may already ha
 changed state. Plans are not atomic transactions. Exceptions are never classified
 as owner mismatch by matching their message text.
 
-Future stages must emit mcp.call.duration (milliseconds), mcp.call.outcome,
-select.score, select.margin, select.outcome, qwen.args.duration (milliseconds),
-and qwen.args.valid at real component boundaries. These components do not exist
-yet; synthetic production observations would falsely imply migration coverage.
-Owner mismatch and MCP-specific errors require typed transport failures in Stage 1.
+The MCP boundary emits mcp.call.duration and mcp.call.outcome with request
+correlation and stable transport errors. Future selection and selected-schema
+generation must emit select.score, select.margin, select.outcome,
+qwen.args.duration and qwen.args.valid at their real component boundaries.
+Those components do not exist yet; synthetic observations would falsely imply
+migration coverage.
 No sub-500ms latency or reranker calibration claim is established.
 
 ## Corrections to the proposed guide
@@ -83,7 +87,7 @@ No sub-500ms latency or reranker calibration claim is established.
 
 ## Separate changes and acceptance gates
 
-0. Instrumentation (this draft): run tests, inspect real correlated events, define baseline.
+0. Instrumentation: run tests, inspect real correlated events, define baseline.
 1. MCP execution: pinned packaged server, exact discovered tools/list contract,
    typed conversion tests, correlated elicitation, owner binding, partial failure
    reporting; disabled by default with tested rollback.
@@ -99,7 +103,7 @@ No sub-500ms latency or reranker calibration claim is established.
 Each stage gets its own PR and rollback checks. Do not remove the working backend
 before the replacement passes acceptance. Prefer nixpkgs dependencies; pin and
 package missing dependencies in Nix, without runtime uvx/pip or model downloads.
-The earlier startup-only catalog simplification is not included in this PR.
+The earlier unpublished startup-only catalog work was not copied into this migration.
 
 ## Verification
 
@@ -113,7 +117,7 @@ PYTHONPATH=backend python -m unittest discover -s tests
 Then exercise successful, refused, expired, partial-failure and cancelled turns on
 a test desktop and inspect aurora-report. Existing snapshot retention is bounded;
 use journal output for longer benchmark runs. Do not interpret missing future-stage
-events as passing acceptance. Nix evaluation and live desktop checks remain required.
+events as passing acceptance. Nix builds run in CI; live desktop checks remain required.
 
 ## Follow-up review
 

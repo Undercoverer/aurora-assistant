@@ -16,5 +16,9 @@ regular-flake and flake-parts/import-tree file layouts.
 Build `nix build .#docs` in the repository to generate OPTIONS.md and options.json
 from the NixOS module declarations. The build also includes these guides and the
 examples. The generated files are under `result/share/doc/aurora/`.
-Legacy design notes in ASSISTANT.md and CONFIGURATION.md describe older versions;
-they are not the current installation instructions.
+[CONFIGURATION.md](CONFIGURATION.md) documents the current grouped module options.
+[ASSISTANT.md](ASSISTANT.md) retains historical backend notes.
+
+See [MCP_MIGRATION.md](MCP_MIGRATION.md) for staged backend coverage,
+[RECALL_EVALUATION.md](RECALL_EVALUATION.md) for optional recall measurements, and
+[ACCEPTANCE.md](ACCEPTANCE.md) for target-host acceptance.

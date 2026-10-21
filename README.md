@@ -1,28 +1,28 @@
-> NixOS setup and option migration: [configuration guide](docs/CONFIGURATION.md).
+# Aurora assistant
 
-> Inference backend: [llama.cpp migration and configuration](docs/LLAMA_CPP.md). Kev and Qwen now share one llama.cpp router service and endpoint; Ollama is no longer managed.
+A local Linux voice assistant for KDE Plasma on Wayland, with openWakeWord,
+Silero VAD, RealtimeSTT/faster-whisper, Kev/Qwen through llama.cpp, and Supertonic
+speech. Named models are provisioned explicitly; normal voice operation is offline.
+Optional web search is configured separately.
 
-> Decision routing, clock access, routine action policy, and Jev/Kev research: [decision workflow](docs/DECISION_WORKFLOW.md).
+Start with the [installation guide](docs/QUICKSTART.md),
+[NixOS configuration](docs/CONFIGURATION.md), and
+[regular-flake or flake-parts/import-tree examples](examples/README.md).
+Use [troubleshooting](docs/TROUBLESHOOTING.md) for unified service reports.
 
-> Runtime fixes, configuration and unified log export: [Troubleshooting](docs/TROUBLESHOOTING.md). Actual Kev decisions and discovered interface documentation: [D-Bus capability catalog](docs/CAPABILITIES.md).
+The direct action backend remains the default. The optional strict MCP backend
+handles generic D-Bus execution and bounded discovery with exact approval
+correlation. Embedding recall is also opt-in; it preserves lexical evidence and
+does not replace Kev or grant approval. See [migration status](docs/MCP_MIGRATION.md),
+[recall evaluation](docs/RECALL_EVALUATION.md), and
+[target-host acceptance](docs/ACCEPTANCE.md) for coverage and remaining gates.
 
-> Latest iterative audit, fixes, and stopping criteria: [adversarial review, round three](docs/ADVERSARIAL_REVIEW_ROUND3.md).
+Nix package builds and isolated D-Bus tests run in CI. Real microphone/speaker,
+KWin rendering, deployed model accuracy and target-CPU latency still need
+acceptance on the target machine.
 
-> Latest reliability fixes and fault-injection results: [adversarial review, round two](docs/ADVERSARIAL_REVIEW_ROUND2.md).
+## Overlay and palette editor
 
-> Reliability findings, fixes, tests, and remaining validation: [adversarial review](docs/ADVERSARIAL_REVIEW.md).
-
-> Start here: [installation guide](docs/QUICKSTART.md), [complete Nix examples](examples/README.md), [D-Bus coverage](docs/DBUS.md), and [generated option documentation](docs/DEVELOPMENT.md). These guides supersede the older backend notes below.
-
-> Current named-model provisioning and settings-agent guide: [docs/SETUP.md](docs/SETUP.md).
-
-> Configuration, wake models, application aliases, D-Bus capabilities and GitHub updates:
-> [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
-
-> Voice backend and NixOS integration: see [docs/ASSISTANT.md](docs/ASSISTANT.md).
-> This is an integration build; target-host audio and Nix validation remain required.
-
-# Aurora Voice Overlay — Palette Studio 2.3
 
 A local, configurable assistant overlay for KDE Plasma on Wayland. Qt 6/QML +
 LayerShellQt, compiled GPU GLSL, D-Bus state changes, and a **live visual editor** and 10 color-only palettes.
@@ -185,8 +185,8 @@ previous revisions.
 
 ### Build environment and limitations
 
-The source ZIP has been statically checked; it has not been compiled or
-rendered in a live Plasma Wayland session in the packaging environment. The
+The overlay compiles and its packaged resources are checked in Nix CI. It has
+not been rendered in a live Plasma Wayland session in that environment. The
 first `--editor` run should be used to verify the imported Qt Quick Controls
 QML module, the shader rendering, and its GPU performance on the target host.
 
