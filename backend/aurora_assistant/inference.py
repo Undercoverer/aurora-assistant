@@ -13,6 +13,10 @@ class Inference:
         from .catalog import CapabilityCatalog
         self.catalog = CapabilityCatalog(max_age=None if config.get('settings', {}).get('discoveryMode', 'startup') == 'startup' else 300)
         self.capability_source = None
+        self.recall = None
+        if config.get('retrieval', {}).get('enable', False):
+            from .recall_process import RecallProcess
+            self.recall = RecallProcess(config['retrieval'])
         # Do not inherit HTTP proxies or follow redirects to a remote service.
         self.http = httpx.AsyncClient(timeout=90, trust_env=False, follow_redirects=False)
 
@@ -70,6 +74,8 @@ class Inference:
                 raise PlanValidationError('Model response is not valid JSON') from exc
 
     async def wait_ready(self):
+        if self.recall is not None:
+            await self.recall.initialize()
         inference = self.config.get('inference', {})
         deadline = time.monotonic() + inference.get('startupTimeoutSeconds', 180)
         while time.monotonic() < deadline:
@@ -113,6 +119,14 @@ class Inference:
         await self.refresh_capabilities()
         c = self.config["llm"]
         retrieved = self.catalog.search(text)
+        if self.recall is not None:
+            try:
+                with phase('recall.hybrid'):
+                    retrieved = await self.recall.search(text, self.catalog.documents())
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                event('recall.failed', fallback='lexical')
         evidence = [*(evidence or []), *([{'capability_documents': retrieved}] if retrieved else [])]
         system = (
             "You are a local desktop assistant. Select only actions explicitly requested by the user. "
@@ -297,4 +311,8 @@ class Inference:
         await play_audio(samples, rate, text, marks, level, message)
 
     async def close(self):
-        await self.http.aclose()
+        try:
+            if self.recall is not None:
+                await self.recall.close()
+        finally:
+            await self.http.aclose()

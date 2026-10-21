@@ -44,6 +44,7 @@ let
   basic = evaluate ((import ../examples/basic/assistant.nix {}).programs.aurora-assistant);
   customized = evaluate ((import ../examples/customized.nix {}).programs.aurora-assistant);
 in
+assert defaults.programs.aurora-assistant.retrieval.enable == false;
 assert defaults.programs.aurora-assistant.execution.backend == "direct";
 assert defaults.programs.aurora-assistant.settings.discoveryMode == "startup";
 assert defaults.programs.aurora-assistant.catalog.enrich == false;

@@ -52,6 +52,21 @@ def _validate_stt(stt):
     _validate_number(stt, 'max_utterance_seconds', 5, 300)
 
 def _validate_policy(data):
+    retrieval = data.get('retrieval', {})
+    if type(retrieval) is not dict or type(retrieval.get('enable', False)) is not bool:
+        raise ValueError('retrieval must be an object with a boolean enable')
+    if retrieval.get('enable'):
+        if type(retrieval.get('model')) is not str or not retrieval['model']:
+            raise ValueError('A named retrieval model is required')
+        if type(retrieval.get('directory')) is not str or not os.path.isabs(retrieval['directory']):
+            raise ValueError('Retrieval model directory must be absolute')
+        if retrieval.get('pooling', 'mean') not in ('mean', 'cls'):
+            raise ValueError('retrieval.pooling must be mean or cls')
+        if type(retrieval.get('queryPrefix', '')) is not str or len(retrieval.get('queryPrefix', '')) > 256:
+            raise ValueError('Invalid retrieval query prefix')
+    for key, low, high in [('maxTokens', 16, 512), ('maxDocuments', 1, 256), ('threads', 1, 4)]:
+        _validate_number(retrieval, key, low, high, integer=True)
+    _validate_number(retrieval, 'timeoutSeconds', 1, 30)
     execution = data.get('execution', {})
     if type(execution) is not dict or execution.get('backend', 'direct') not in ('direct', 'mcp'):
         raise ValueError('execution.backend must be direct or mcp')

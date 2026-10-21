@@ -89,11 +89,34 @@ def install_gguf(name, revision, destination):
     return {'repo': repo, 'revision': info.sha, 'file': matches[0]}
 
 
+def install_retrieval(spec, stage):
+    """Download only explicitly named graph/tokenizer files at one commit."""
+    from huggingface_hub import HfApi, hf_hub_download
+    repo = spec.get('repo')
+    if type(repo) is not str or not repo or '/' not in repo:
+        raise ValueError('A named retrieval model repository is required')
+    files = {'model.onnx': spec['onnxFile'], 'tokenizer.json': spec['tokenizerFile']}
+    for filename in files.values():
+        if not filename or Path(filename).is_absolute() or '..' in Path(filename).parts:
+            raise ValueError('Retrieval asset paths must be relative repository files')
+    info = HfApi().model_info(repo, revision=spec['revision'])
+    destination = stage / 'retrieval'
+    destination.mkdir()
+    for target, filename in files.items():
+        source = hf_hub_download(repo, filename=filename, revision=info.sha)
+        shutil.copyfile(source, destination / target)
+    from .recall import OnnxEncoder
+    OnnxEncoder({**spec, 'directory': str(destination.resolve())}).encode(['Aurora capability'])
+    return {'repo': repo, 'revision': info.sha, 'files': files}
+
+
 def install_assets(spec, stage):
     from openwakeword import MODELS, FEATURE_MODELS
     from supertonic.config import get_model_config
     from importlib.resources import files
     resolved = {}
+    if spec.get('retrieval'):
+        resolved['retrieval'] = install_retrieval(spec['retrieval'], stage)
     if spec.get('kevDecisionModel'):
         resolved['kev'] = install_gguf(spec['kevDecisionModel'], spec.get('revisions', {}).get('kev'), stage / 'kev.gguf')
     if spec.get('plannerModel'):

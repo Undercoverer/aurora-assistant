@@ -29,7 +29,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install the audited release and nixpkgs-matching library versions
-        run: python -m pip install mcdbus==2026.3.6.3 fastmcp==3.4.7 dbus-fast==5.0.22 dbus-next httpx numpy soundfile fastapi huggingface_hub
+        run: python -m pip install mcdbus==2026.3.6.3 fastmcp==3.4.7 dbus-fast==5.0.22 dbus-next httpx numpy soundfile fastapi huggingface_hub onnxruntime==1.31.0 tokenizers onnx
       - name: Verify protocol, denial, typing, ownership and live test service
         env:
           PYTHONPATH: backend:mcp
