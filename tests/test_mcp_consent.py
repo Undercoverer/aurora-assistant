@@ -103,3 +103,47 @@ class ConsentTests(unittest.IsolatedAsyncioTestCase):
         for plans in [[], [self.plan] * 2, [self.plan] * 5]:
             with self.assertRaises(MCPFailure):
                 self.consent.authorize(plans)
+
+class PlanIntegrationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_plan_approval_and_partial_failure_revoke_all_tokens(self):
+        from types import SimpleNamespace
+        from aurora_assistant.agent import SettingsAgent
+        consent = Consent(None)
+        plans = [consent.prepare(PLAN, {**REQUEST, 'args': [n]}) for n in (1, 2, 3)]
+        calls = []
+        async def execute(plan):
+            request = consent.begin(plan)
+            try:
+                calls.append(request['args'][0])
+                if len(calls) == 2:
+                    raise MCPFailure('mcp.transport_failed')
+                return 'First method returned.'
+            finally:
+                consent.finish()
+        desktop = SimpleNamespace(authorize_plan=consent.authorize,
+                                  revoke_plan=consent.revoke, execute=execute)
+        approval = SimpleNamespace(request=AsyncMock(return_value=True))
+        overlay = SimpleNamespace(state=AsyncMock(), message=AsyncMock())
+        agent = SettingsAgent({'apps': {}}, None, desktop, approval, overlay)
+        agent._review = AsyncMock(return_value={'decision': 'allow', 'reason': ''})
+        result = await agent._execute_plan('change three values', plans)
+        self.assertEqual(approval.request.call_args.args[0]['plan'], plans)
+        self.assertEqual(calls, [1, 2])
+        self.assertIn('Remaining actions were not run', result)
+        self.assertFalse(consent.pending)
+        self.assertFalse(consent.authorized)
+
+    async def test_model_allow_does_not_grant_consent_after_human_denial(self):
+        from types import SimpleNamespace
+        from aurora_assistant.agent import SettingsAgent
+        consent = Consent(None)
+        plan = consent.prepare(PLAN, REQUEST)
+        desktop = SimpleNamespace(authorize_plan=consent.authorize,
+                                  revoke_plan=consent.revoke, execute=AsyncMock())
+        approval = SimpleNamespace(request=AsyncMock(return_value=False))
+        agent = SettingsAgent({'apps': {}}, None, desktop, approval,
+                              SimpleNamespace(state=AsyncMock(), message=AsyncMock()))
+        agent._review = AsyncMock(return_value={'decision': 'allow', 'reason': ''})
+        self.assertIn('not approved', await agent._execute_plan('change value', [plan]))
+        desktop.execute.assert_not_awaited()
+        self.assertFalse(consent.authorized)
