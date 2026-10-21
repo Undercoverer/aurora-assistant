@@ -21,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        output: ['assistant', 'default', 'docs', 'checks.x86_64-linux.configuration']
+        output: ['assistant', 'default', 'docs', 'checks.x86_64-linux.configuration', 'checks.x86_64-linux.backend']
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:

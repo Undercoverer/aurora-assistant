@@ -27,7 +27,7 @@ let
         jinja = true; chat-template-kwargs = ''{"enable_thinking":false}''; };
     }
   ));
-  modelSpec = pkgs.writeText "aurora-models.json" (builtins.toJSON {
+  modelSpec = pkgs.writeText "aurora-models.json" (builtins.toJSON ({
     inherit (cfg.models) silero revisions;
     stt = cfg.recognition.model;
     realtimeStt = cfg.recognition.realtimeModel;
@@ -37,7 +37,10 @@ let
     voice = cfg.speech.voice;
     plannerModel = if cfg.planner.manageService then cfg.planner.model else null;
     kevDecisionModel = if cfg.kev.enable && cfg.kev.manageService then cfg.kev.model else null;
-  });
+  } // lib.optionalAttrs cfg.retrieval.enable {
+    retrieval = { repo = cfg.retrieval.model;
+      inherit (cfg.retrieval) revision onnxFile tokenizerFile pooling maxTokens threads; };
+  }));
   modelCheck = lib.escapeShellArgs [ "${cfg.package}/bin/aurora-models"
     "--config" modelSpec "--root" cfg.models.directory "--check" ];
   packages = self.packages.${pkgs.stdenv.hostPlatform.system};
@@ -45,7 +48,11 @@ let
     inference = { url = routerUrl; models = managedModels; startupTimeoutSeconds = cfg.inference.startupTimeoutSeconds; };
     webSearch = { inherit (cfg.webSearch) enable url maxResults language; };
     execution = { backend = cfg.execution.backend;
-      executable = "${cfg.execution.package}/bin/aurora-mcdbus"; };
+      executable = if cfg.execution.backend == "mcp" then "${cfg.execution.package}/bin/aurora-mcdbus" else null; };
+    retrieval = {
+      inherit (cfg.retrieval) enable model pooling maxTokens maxDocuments threads queryPrefix timeoutSeconds;
+      directory = cfg.retrieval.modelDirectory;
+    };
     apps = cfg.applications;
     dbus_actions = cfg.dbusActions;
     settings = { enable = true; inherit (cfg.settings) discoveryMode scanMaxObjects scanTimeoutSeconds; sessionPrefixes = cfg.settings.sessionPrefixes;
@@ -286,6 +293,31 @@ in {
       description = "Review plans outside the validated routine capability policy with a separate local model context. Policy is independent of request wording. Generic D-Bus mutations still require human approval; routine policy cannot override an adapter approval requirement."; };
     safety.model = lib.mkOption {
       description = "Model alias used in a separate tool-free review context. With the managed single-model server this must match planner.model. Review does not replace deterministic approval rules."; type = types.str; default = cfg.planner.model; };
+    retrieval = {
+      enable = lib.mkEnableOption "experimental offline embedding recall for planner evidence (Kev routing is unchanged)";
+      model = lib.mkOption { type = types.nullOr types.str; default = null;
+        description = "Explicit Hugging Face repository containing the ONNX encoder and tokenizer. Required when recall is enabled."; };
+      revision = lib.mkOption { type = types.str; default = "main";
+        description = "Provisioning revision, resolved to a commit once and recorded in the model manifest."; };
+      onnxFile = lib.mkOption { type = types.str; default = "onnx/model_quantized.onnx";
+        description = "Relative self-contained ONNX encoder file in the named repository. External weight files are not supported."; };
+      tokenizerFile = lib.mkOption { type = types.str; default = "tokenizer.json";
+        description = "Relative tokenizers JSON file in the named repository."; };
+      modelDirectory = lib.mkOption { type = types.str; default = "${assetRoot}/retrieval";
+        description = "Absolute directory containing model.onnx and tokenizer.json. Runtime never downloads assets."; };
+      pooling = lib.mkOption { type = types.enum [ "mean" "cls" ]; default = "mean";
+        description = "Pooling required by the chosen embedding model; verify against its model card."; };
+      queryPrefix = lib.mkOption { type = types.str; default = "";
+        description = "Query prefix required by the chosen embedding model, if any."; };
+      maxTokens = lib.mkOption { type = types.ints.between 16 512; default = 256;
+        description = "Maximum tokens per document or query."; };
+      maxDocuments = lib.mkOption { type = types.ints.between 1 256; default = 64;
+        description = "Maximum observed documents embedded, ordered by lexical relevance."; };
+      threads = lib.mkOption { type = types.ints.between 1 4; default = 1;
+        description = "CPU threads for the optional local encoder."; };
+      timeoutSeconds = lib.mkOption { type = types.numbers.between 1 30; default = 5;
+        description = "Recall request deadline; expiry terminates the worker and uses lexical evidence until controller restart."; };
+    };
     execution.backend = lib.mkOption {
       type = types.enum [ "direct" "mcp" ]; default = "direct";
       description = "Execution transport for generic D-Bus mutations. MCP is experimental and requires exact per-call consent. Set direct to roll back. Desktop adapters and overlay IPC retain their existing transport.";
@@ -365,6 +397,8 @@ in {
   };
   config = lib.mkIf cfg.enable {
     assertions = [
+      { assertion = !cfg.retrieval.enable || (cfg.retrieval.model != null && cfg.retrieval.model != "");
+        message = "Aurora retrieval requires an explicit model repository."; }
       { assertion = !managedPlanner || cfg.planner.url == "${routerUrl}/v1";
         message = "A custom planner URL requires planner.manageService=false."; }
       { assertion = !managedKev || cfg.kev.url == routerUrl;

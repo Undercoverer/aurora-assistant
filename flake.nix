@@ -66,7 +66,7 @@
     in {
       nixosModules.default = import ./nix/module.nix self;
       packages = eachSystem (system: pkgs: let
-        env = (pythonSet pkgs).mkVirtualEnv "aurora-python" { aurora-assistant = [ "voice" "mcp" ]; };
+        env = (pythonSet pkgs).mkVirtualEnv "aurora-python" { aurora-assistant = [ "voice" "mcp" "retrieval" ]; };
         optionEval = nixpkgs.lib.nixosSystem {
           inherit system;
           modules = [ self.nixosModules.default ];
@@ -96,7 +96,7 @@
           paths = [ env ];
           nativeBuildInputs = [ pkgs.makeWrapper ];
           postBuild = ''
-            for executable in aurora-assistant aurora-tts aurora-models aurora-control aurora-desktop aurora-report; do
+            for executable in aurora-assistant aurora-tts aurora-models aurora-control aurora-desktop aurora-report aurora-evaluate-recall; do
               wrapProgram "$out/bin/$executable" \
                 --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath [ pkgs.portaudio pkgs.libsndfile pkgs.stdenv.cc.cc.lib ]}" \
                 --prefix PATH : "${pkgs.lib.makeBinPath [ pkgs.systemd pkgs.wl-clipboard ]}" \
@@ -160,7 +160,8 @@
         '';
 
         backend = pkgs.runCommand "aurora-backend-tests" {
-          nativeBuildInputs = [ (pkgs.python311.withPackages (p: [ p.httpx p.dbus-next p.numpy p.soundfile p.fastapi ])) pkgs.dbus ];
+          nativeBuildInputs = [ (pkgs.python3.withPackages (p: [ p.httpx p.dbus-next p.numpy p.soundfile p.fastapi
+            p.huggingface-hub p.onnxruntime p.tokenizers p.onnx ])) pkgs.dbus ];
         } ''
           export PYTHONPATH=${./backend}
           export AURORA_TEST_CONFIG=${./config/assistant.example.json}

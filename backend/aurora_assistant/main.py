@@ -70,6 +70,7 @@ async def run(config, text=None):
         approval.catalog = inference.catalog
         cleanup.push_async_callback(approval.close)
         bus = BusAccess(config.get("settings", {}))
+        transport = None
         if config.get('execution', {}).get('backend', 'direct') == 'mcp':
             from .mcp_client import Consent, MCPTransport
             from .mcp_bus import MCPBusAccess
@@ -78,7 +79,6 @@ async def run(config, text=None):
                     {'system_bus_call': request}, overlay.message, timeout=55)
             consent = Consent(second_prompt)
             transport = MCPTransport(config['execution']['executable'], consent)
-            await cleanup.enter_async_context(transport.connect())
             bus = MCPBusAccess(config.get('settings', {}), transport, consent)
         controller.agent = SettingsAgent(config, inference,
             RemoteDesktop(bus, executor), approval, overlay)
@@ -92,6 +92,8 @@ async def run(config, text=None):
         cleanup.push_async_callback(stop_visuals, controller, visuals)
         await overlay.state('thinking')
         await overlay.message('Starting local services and loading voice models…')
+        if transport is not None:
+            await cleanup.enter_async_context(transport.connect())
         with phase("services.ready"):
             await inference.wait_ready()
         from .discovery import maintain

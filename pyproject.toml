@@ -10,8 +10,13 @@ voice = ["RealtimeSTT[faster-whisper,silero-onnx-cpu,openwakeword]==1.1.2", "sup
 mcp = [
     "mcp==1.30.0",
 ]
+retrieval = [
+    "onnxruntime==1.31.0",
+    "tokenizers>=0.23.3",
+]
 
 [project.scripts]
+aurora-evaluate-recall = "aurora_assistant.evaluate_recall:main"
 aurora-report = "aurora_assistant.report:main"
 aurora-desktop = "aurora_assistant.desktop_bus:main"
 aurora-assistant = "aurora_assistant.main:main"

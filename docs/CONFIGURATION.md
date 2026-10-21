@@ -33,6 +33,8 @@ Initial provisioning requires internet access; normal voice operation is local.
 | `planner` | Generation and complex requests | `model`, `contextSize`, `gpuLayers` |
 | `models` | Asset provisioning | `enable`, `directory`, `revisions` |
 | `inference` | Shared llama.cpp service | `package`, `port`, `startupTimeoutSeconds` |
+| `retrieval` | Optional offline embedding evidence | `enable`, `model`, `pooling`, `maxDocuments` |
+| `execution` | Generic D-Bus transport | `backend`, `package` |
 | `catalog` | Optional idle-time D-Bus explanations (off by default) | `enrich`, `persist`, `idleSeconds` |
 | `diagnostics` | Content logging | `logContent` |
 | `webSearch` | Optional online search through a local API | `enable`, `engines` |
@@ -110,3 +112,5 @@ programs.aurora-assistant = {
   catalog.enrich = false;
 };
 ```
+
+See [recall evaluation](RECALL_EVALUATION.md) before enabling optional embeddings. Kev routing is unchanged.

@@ -29,8 +29,8 @@ Readable properties, no-input methods and writable boolean properties supply
 concrete candidates. Adapter schemas supply finite argument domains. Free-form
 arguments and multiple actions go to Qwen. See the [workflow](DECISION_WORKFLOW.md).
 
-The planner additionally receives a small lexical shortlist. There is no embedding
-service. Signatures alone do not establish meaning, units, ranges or side effects.
+The planner additionally receives a small lexical shortlist. Optional offline embeddings can supplement this shortlist; see
+[recall evaluation](RECALL_EVALUATION.md). They do not replace Kev or policy. Signatures alone do not establish meaning, units, ranges or side effects.
 Generic mutations still need live introspection, validation, owner checks and
 approval. Some adapter operations use fixed native utilities internally.
 
