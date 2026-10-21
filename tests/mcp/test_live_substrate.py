@@ -1,10 +1,12 @@
 """Private test bus only. Never uses an existing desktop service."""
+import json
 import os
 import unittest
 from dbus_fast.aio import MessageBus
 from dbus_fast.constants import PropertyAccess
 from dbus_fast.service import ServiceInterface, method, dbus_property
 from fastmcp import Client
+from fastmcp.exceptions import ToolError
 import aurora_mcdbus as server
 
 
@@ -57,17 +59,39 @@ class LiveTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.fixture.calls, [50])
         self.assertTrue(self.fixture.enabled)
 
-    async def test_denial_and_stale_owner_do_not_mutate(self):
-        async def deny(*args):
+    async def test_denial_reaches_confirmation_without_mutation(self):
+        prompts = []
+        async def deny(message, *args):
+            prompts.append(json.loads(message))
             return {'confirm': False}
         async with Client(server.mcp, elicitation_handler=deny) as client:
-            with self.assertRaises(Exception):
-                await client.call_tool('call_method', {**self.endpoint, 'method': 'SetLevel', 'args': '[50]'})
-        async with Client(server.mcp, elicitation_handler=self.accept) as client:
-            with self.assertRaises(Exception):
+            for tool, arguments in [
+                ('call_method', {'method': 'SetLevel', 'args': '[50]'}),
+                ('set_property', {'property_name': 'Enabled', 'value': 'true', 'expected_value': 'false'}),
+            ]:
+                with self.subTest(tool=tool), self.assertRaisesRegex(ToolError, '^confirmation_denied$'):
+                    await client.call_tool(tool, {**self.endpoint, **arguments})
+        self.assertEqual(len(prompts), 2)
+        self.assertEqual(prompts[0]['method'], 'SetLevel')
+        self.assertEqual(prompts[0]['args'], [50])
+        self.assertEqual(prompts[1]['property'], 'Enabled')
+        self.assertIs(prompts[1]['value'], True)
+        self.assertTrue(all(p['owner'] == self.bus.unique_name for p in prompts))
+        self.assertEqual(self.fixture.calls, [])
+        self.assertFalse(self.fixture.enabled)
+
+    async def test_stale_owner_does_not_prompt_or_mutate(self):
+        prompts = []
+        async def accept(message, *args):
+            prompts.append(message)
+            return {'confirm': True}
+        async with Client(server.mcp, elicitation_handler=accept) as client:
+            with self.assertRaisesRegex(ToolError, '^owner_mismatch$'):
                 await client.call_tool('call_method', {**self.endpoint, 'expected_owner': ':999.999',
                                                        'method': 'SetLevel', 'args': '[50]'})
+        self.assertEqual(prompts, [])
         self.assertEqual(self.fixture.calls, [])
+        self.assertFalse(self.fixture.enabled)
 
 
 if __name__ == '__main__':

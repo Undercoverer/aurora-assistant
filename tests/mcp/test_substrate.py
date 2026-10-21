@@ -1,4 +1,4 @@
-"""Run with PYTHONPATH=mcp and FastMCP 3.0.2 / mcdbus 2026.3.6.3."""
+"""Run with PYTHONPATH=mcp and FastMCP 3.4.7 / mcdbus 2026.3.6.3."""
 import asyncio
 import json
 import os
@@ -19,6 +19,56 @@ XML = '''<node><interface name="org.kde.AuroraTest">
 </interface></node>'''
 ENDPOINT = dict(bus='session', service='org.kde.AuroraTest', object_path='/',
                 interface='org.kde.AuroraTest', expected_owner=':1.20')
+
+
+STANDARD_DOCTYPE = ('<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"\n'
+                    '"http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">\n')
+
+
+class IntrospectionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_describe_accepts_standard_declaration(self):
+        xml = STANDARD_DOCTYPE + XML
+        connection = object()
+        ctx = SimpleNamespace(lifespan_context=SimpleNamespace(
+            get_bus=AsyncMock(return_value=connection)))
+        with patch.object(server, 'owner', AsyncMock(return_value=':1.20')), \
+                patch.object(server, 'send', AsyncMock(return_value=[xml])):
+            actual, unique, node, raw = await server.describe(
+                ctx, 'session', 'org.kde.AuroraTest', '/')
+        self.assertIs(actual, connection)
+        self.assertEqual(unique, ':1.20')
+        self.assertEqual(raw, xml)
+        self.assertEqual(node.find('interface').get('name'), 'org.kde.AuroraTest')
+
+    def test_plain_xml_and_predefined_entities(self):
+        self.assertEqual(server.parse_introspection('<node name="a&amp;b"/>').get('name'), 'a&b')
+
+    def test_rejects_entities_and_custom_dtd(self):
+        documents = [
+            '<!DOCTYPE node [<!ENTITY x "expanded">]><node>&x;</node>',
+            '<!DOCTYPE node [<!ENTITY x SYSTEM "file:///etc/passwd">]><node>&x;</node>',
+            '<!DOCTYPE node [<!ENTITY % x SYSTEM "https://invalid.test/evil.dtd">%x;]><node/>',
+            '<!DOCTYPE node SYSTEM "https://invalid.test/evil.dtd"><node/>',
+            STANDARD_DOCTYPE.replace('>\n', ' [<!ENTITY x "expanded">]>\n') + '<node>&x;</node>',
+            '<!DOCTYPE node [<!ENTITY a "123"><!ENTITY b "&a;&a;&a;">]><node>&b;</node>',
+        ]
+        for xml in documents:
+            with self.subTest(xml=xml), self.assertRaisesRegex(ToolError, '^DTD and entity declarations are unsupported$'):
+                server.parse_introspection(xml)
+
+    def test_size_limit_is_bytes_and_precedes_parsing(self):
+        for xml in ['x' * (server.MAX_XML + 1), '<node>' + 'é' * (server.MAX_XML // 2) + '</node>']:
+            with self.subTest(length=len(xml)), \
+                    patch.object(server.expat, 'ParserCreate') as parser, \
+                    self.assertRaisesRegex(ToolError, '^Invalid or oversized introspection$'):
+                server.parse_introspection(xml)
+            parser.assert_not_called()
+
+    def test_invalid_xml_and_root(self):
+        for xml, error in [('<node>', 'Invalid introspection XML'),
+                           ('<other/>', 'Invalid introspection root')]:
+            with self.subTest(xml=xml), self.assertRaisesRegex(ToolError, '^' + error + '$'):
+                server.parse_introspection(xml)
 
 
 class Types(unittest.TestCase):
@@ -98,7 +148,7 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_caller_signature_is_rejected(self):
         async with Client(server.mcp, elicitation_handler=self.accept) as client:
-            with self.assertRaises(Exception):
+            with self.assertRaises(ToolError):
                 await client.call_tool('call_method', {**ENDPOINT, 'method': 'SetLevel',
                                                        'args': '[50]', 'signature': 's'})
         self.send_mock.assert_not_awaited()
@@ -114,15 +164,16 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_unavailable_confirmation_never_invokes(self):
         async with Client(server.mcp) as client:
-            with self.assertRaises(Exception):
+            with self.assertRaisesRegex(ToolError, '^confirmation_unavailable$'):
                 await client.call_tool('call_method', {**ENDPOINT, 'method': 'SetLevel', 'args': '[50]'})
         self.send_mock.assert_not_awaited()
 
     async def test_owner_change_after_approval_never_invokes(self):
         self.owner_mock.return_value = ':1.21'
         async with Client(server.mcp, elicitation_handler=self.accept) as client:
-            with self.assertRaises(Exception):
+            with self.assertRaisesRegex(ToolError, '^owner_mismatch$'):
                 await client.call_tool('call_method', {**ENDPOINT, 'method': 'SetLevel', 'args': '[50]'})
+        self.assertEqual(len(self.messages), 1)
         self.send_mock.assert_not_awaited()
 
     async def test_schema_change_after_approval_never_invokes(self):
@@ -130,13 +181,14 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
             (self.connection, ':1.20', server.ElementTree.fromstring(XML), XML),
             (self.connection, ':1.20', server.ElementTree.fromstring(XML.replace('type="i"', 'type="s"')), XML)]
         async with Client(server.mcp, elicitation_handler=self.accept) as client:
-            with self.assertRaises(Exception):
+            with self.assertRaisesRegex(ToolError, '^schema_changed$'):
                 await client.call_tool('call_method', {**ENDPOINT, 'method': 'SetLevel', 'args': '[50]'})
+        self.assertEqual(len(self.messages), 1)
         self.send_mock.assert_not_awaited()
 
     async def test_type_error_does_not_prompt(self):
         async with Client(server.mcp, elicitation_handler=self.accept) as client:
-            with self.assertRaises(Exception):
+            with self.assertRaisesRegex(ToolError, '^type_error$'):
                 await client.call_tool('call_method', {**ENDPOINT, 'method': 'SetLevel', 'args': '[true]'})
         self.assertFalse(self.messages)
         self.send_mock.assert_not_awaited()
@@ -144,9 +196,10 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
     async def test_property_changed_does_not_write(self):
         self.send_mock.return_value = [Variant('b', True)]
         async with Client(server.mcp, elicitation_handler=self.accept) as client:
-            with self.assertRaises(Exception):
+            with self.assertRaisesRegex(ToolError, '^property_changed$'):
                 await client.call_tool('set_property', {**ENDPOINT, 'property_name': 'Enabled',
                                                         'value': 'true', 'expected_value': 'false'})
+        self.assertEqual(len(self.messages), 1)
         self.assertEqual(self.send_mock.await_count, 1)
         self.assertEqual(self.send_mock.call_args.args[4], 'Get')
 

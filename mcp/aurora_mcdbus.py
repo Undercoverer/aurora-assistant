@@ -16,6 +16,7 @@ import json
 import math
 from time import monotonic
 from xml.etree import ElementTree
+from xml.parsers import expat
 
 from dbus_fast import Message, MessageType, Variant
 from dbus_fast.signature import SignatureTree
@@ -133,16 +134,39 @@ async def describe(ctx, bus, service, object_path, expected_owner=None):
     if len(values) != 1 or type(values[0]) is not str or len(values[0].encode()) > MAX_XML:
         raise ToolError('Invalid or oversized introspection')
     xml = values[0]
-    # No DTD/entity expansion. Introspection needs no custom entities.
-    if '<!DOCTYPE' in xml or '<!ENTITY' in xml:
+    node = parse_introspection(xml)
+    return connection, unique, node, xml
+
+
+def parse_introspection(xml):
+    """Accept the inert standard D-Bus DOCTYPE, never a custom DTD.
+
+    Validate declarations with Expat before ElementTree sees the document.
+    No external parser or resource resolver is installed. Reject internal
+    subsets before any entity declaration or expansion can be processed.
+    """
+    if type(xml) is not str or len(xml.encode()) > MAX_XML:
+        raise ToolError('Invalid or oversized introspection')
+    def reject(*args):
         raise ToolError('DTD and entity declarations are unsupported')
+    def doctype(name, system_id, public_id, internal_subset):
+        if (internal_subset or name != 'node'
+                or public_id != '-//freedesktop//DTD D-BUS Object Introspection 1.0//EN'
+                or system_id != 'http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd'):
+            reject()
+    parser = expat.ParserCreate()
+    parser.StartDoctypeDeclHandler = doctype
+    parser.EntityDeclHandler = reject
+    parser.ExternalEntityRefHandler = reject
+    parser.SetParamEntityParsing(expat.XML_PARAM_ENTITY_PARSING_NEVER)
     try:
+        parser.Parse(xml, True)
         node = ElementTree.fromstring(xml)
-    except ElementTree.ParseError as exc:
+    except (expat.ExpatError, ElementTree.ParseError):
         raise ToolError('Invalid introspection XML') from None
     if node.tag != 'node':
         raise ToolError('Invalid introspection root')
-    return connection, unique, node, xml
+    return node
 
 
 def parse_json(text):
