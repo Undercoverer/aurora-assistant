@@ -43,16 +43,40 @@ class LiveClientTests(unittest.IsolatedAsyncioTestCase):
                     consent.authorize([call])
                     self.assertIn('not independently verified', await bus.execute(call))
                     self.assertEqual(fixture.calls, [50])
+                    routine = await bus.prepare(Action('dbus_call', {**endpoint, 'method': 'SetLevel', 'argumentsJson': '[65]'}))
+                    routine = consent.apply_policy(routine, 'ordinary')
+                    consent.authorize_routine([routine])
+                    await bus.execute(routine)
+                    self.assertEqual(fixture.calls, [50, 65])
                     prop = await bus.prepare(Action('dbus_set', {**endpoint, 'property': 'Enabled', 'valueJson': 'true'}))
                     consent.authorize([prop])
                     self.assertIn('true', await bus.execute(prop))
                     self.assertTrue(fixture.enabled)
+                    from types import SimpleNamespace
+                    from aurora_assistant.agent import SettingsAgent
+                    from aurora_assistant.approval import Approval
+                    from aurora_assistant.mcp_desktop import MCPDesktop
+                    approval = Approval()
+                    agent = SettingsAgent({'apps': {}},
+                        SimpleNamespace(assess_effects=AsyncMock(return_value=['destructive'])),
+                        MCPDesktop(bus, None), approval,
+                        SimpleNamespace(state=AsyncMock(), message=AsyncMock()), device_policy=True)
+                    agent.voice_confirmation = True
+                    try:
+                        spoken = await bus.prepare(Action('dbus_call', {**endpoint, 'method': 'SetLevel', 'argumentsJson': '[68]'}))
+                        self.assertIn('Proceed?', await agent._execute_plan('fixture destructive operation', [spoken]))
+                        self.assertEqual(fixture.calls, [50, 65])
+                        await agent.run('yes')
+                        self.assertEqual(fixture.calls, [50, 65, 68])
+                    finally:
+                        agent.cancel_confirmation()
+                        await approval.close()
                     stale = await bus.prepare(Action('dbus_call', {**endpoint, 'method': 'SetLevel', 'argumentsJson': '[70]'}))
                     consent.authorize([stale])
                     await service.release_name('org.kde.AuroraMcpFixture')
                     with self.assertRaisesRegex(MCPFailure, '^mcp.refused$'):
                         await bus.execute(stale)
-                    self.assertEqual(fixture.calls, [50])
+                    self.assertEqual(fixture.calls, [50, 65, 68])
                     second.assert_not_awaited()
         finally:
             service.disconnect()

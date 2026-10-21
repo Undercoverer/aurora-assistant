@@ -90,10 +90,15 @@ aurora-control approve TOKEN_SHOWN_BY_PENDING
 aurora-control deny TOKEN_SHOWN_BY_PENDING
 ```
 
-Approval ends when its token expires or the request deadline is reached. The default MCP backend requires explicit plan approval for all actions, including
-built-in controls. System-bus calls require a second explicit prompt.
-There is no graphical approval dialog yet. A model's confidence never grants
-extra authority.
+The default MCP device policy runs understood, requested routine actions and
+speaks the result. Destructive plans are shown and spoken before execution. Say
+“yes” in the follow-up window to approve that exact plan, or “no” to cancel.
+Changing arguments in the answer cancels the plan. Destructive system-bus plans
+require a second separate answer. Silence, expiry or cancellation revoke consent.
+Unknown effects stop without executing. Text mode, disabled voice follow-ups and
+oversized exact plans use the terminal control above. There is no graphical dialog.
+Set `execution.confirmationPolicy = "always"` for blanket MCP plan approval.
+Effect classification is fallible; it has not been benchmarked on target hardware.
 
 ## Updates and recovery
 

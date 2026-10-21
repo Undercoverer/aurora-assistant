@@ -45,6 +45,7 @@ let
   customized = evaluate ((import ../examples/customized.nix {}).programs.aurora-assistant);
 in
 assert defaults.programs.aurora-assistant.retrieval.enable == false;
+assert defaults.programs.aurora-assistant.execution.confirmationPolicy == "destructive";
 assert defaults.programs.aurora-assistant.execution.backend == "mcp";
 assert defaults.programs.aurora-assistant.settings.discoveryScope == "all";
 assert defaults.programs.aurora-assistant.settings.discoveryMode == "realtime";

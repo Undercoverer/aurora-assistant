@@ -7,10 +7,14 @@ on org.aurora.Desktop1; it cannot Apply or invoke arbitrary endpoints. Prepare
 creates an expiring token but performs no desktop effect. Apply uses the same
 strict call_method confirmation boundary as generic mutations. Adapter plans,
 owner, token arguments and the shorter adapter expiry are bound to plan approval.
-The pending PR still requires plan approval for all MCP actions. This is an interim
-limitation, not the requested final device-assistant policy. Destructive-only approval
-and spoken authorization remain a separate acceptance gate before merging the new
-default. Model confidence must not override required approval.
+The default device policy executes understood, requested routine actions without
+an approval prompt. Destructive plans require approval of the complete exact list;
+voice mode accepts a separate affirmative follow-up. Unknown or unrequested effects
+stop before execution. Known adapter effects are checked locally; generic effects
+use Kev decisions with Qwen escalation. Deterministic approval floors cannot be
+lowered by model confidence, but these floors are not a complete effect detector.
+Model effect classification still needs target-device accuracy evaluation.
+Set `execution.confirmationPolicy = "always"` to require approval for every MCP plan.
 
 Live discovery starts with current service names and follows relevant objects on
 demand within request/round bounds; no startup crawl or persisted service inventory
@@ -28,8 +32,8 @@ absolute `execution.executable` path (or install aurora-mcdbus on PATH).
 
 The controller approves the complete prepared list, then grants one-use consent
 for each exact action. Each elicitation must match the active nonce, endpoint,
-owner, signature, values and expiry. System-bus calls require a second explicit
-prompt. Expiry is rechecked by the server before dispatch. Cancellation and
+owner, signature, values and expiry. Destructive system-bus calls require a second explicit
+prompt; routine calls use the exact standing policy grant. Expiry is rechecked by the server before dispatch. Cancellation and
 failure stop later actions without automatic retries or a direct fallback.
 Existing desktop tokens are retained. Multi-action execution can partially succeed.
 

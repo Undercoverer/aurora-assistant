@@ -34,7 +34,7 @@ Initial provisioning requires internet access; normal voice operation is local.
 | `models` | Asset provisioning | `enable`, `directory`, `revisions` |
 | `inference` | Shared llama.cpp service | `package`, `port`, `startupTimeoutSeconds` |
 | `retrieval` | Optional offline embedding evidence | `enable`, `model`, `pooling`, `maxDocuments` |
-| `execution` | Generic D-Bus transport | `backend`, `package` |
+| `execution` | Generic D-Bus transport | `backend`, `package`, `confirmationPolicy` |
 | `catalog` | Optional idle-time D-Bus explanations (off by default) | `enrich`, `persist`, `idleSeconds` |
 | `diagnostics` | Content logging | `logContent` |
 | `webSearch` | Optional online search through a local API | `enable`, `engines` |
@@ -106,6 +106,7 @@ are discarded. There is no startup crawl or stored service inventory in this mod
 
 ```nix
 programs.aurora-assistant = {
+  execution.confirmationPolicy = "destructive"; # "always" requires every MCP plan approval
   execution.backend = "mcp"; # default; "direct" is explicit legacy rollback only
   settings.discoveryScope = "all"; # all running well-known services; restricted uses prefixes
   settings.discoveryMode = "realtime"; # default; startup/periodic are legacy modes

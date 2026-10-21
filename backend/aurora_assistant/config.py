@@ -70,6 +70,8 @@ def _validate_policy(data):
     execution = data.setdefault('execution', {'backend': 'mcp'})
     if type(execution) is not dict or execution.get('backend', 'mcp') not in ('direct', 'mcp'):
         raise ValueError('execution.backend must be direct or mcp')
+    if execution.get('confirmationPolicy', 'destructive') not in ('destructive', 'always'):
+        raise ValueError('execution.confirmationPolicy must be destructive or always')
     if execution.get('backend', 'mcp') == 'mcp':
         import shutil
         execution.setdefault('executable', shutil.which('aurora-mcdbus') or '/run/current-system/sw/bin/aurora-mcdbus')

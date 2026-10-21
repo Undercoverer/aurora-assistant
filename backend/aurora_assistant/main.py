@@ -82,7 +82,9 @@ async def run(config, text=None):
             transport = MCPTransport(config['execution']['executable'], consent)
             bus = MCPBusAccess(config.get('settings', {}), transport, consent)
         desktop = MCPDesktop(bus, executor) if transport is not None else RemoteDesktop(bus, executor)
-        controller.agent = SettingsAgent(config, inference, desktop, approval, overlay)
+        controller.agent = SettingsAgent(config, inference, desktop, approval, overlay,
+            device_policy=transport is not None and config.get('execution', {}).get('confirmationPolicy', 'destructive') == 'destructive')
+        cleanup.callback(controller.agent.cancel_confirmation)
         if config.get('settings', {}).get('discoveryMode', 'realtime') == 'realtime':
             from .discovery import refresh_live
             controller.agent.live_refresh = lambda: refresh_live(inference, bus)
@@ -145,6 +147,8 @@ async def run(config, text=None):
             raise
         cleanup.push_async_callback(asyncio.to_thread, voice.close)
         event("voice.initialize.done")
+        controller.agent.voice_confirmation = (config.get('conversation', {}).get('followUpSeconds', 12) > 0
+                                                and config.get('conversation', {}).get('maxFollowUps', 2) > 0)
         await overlay.reset()
         while True:
             controller.accept_events = True

@@ -47,7 +47,7 @@ let
   runtimeConfig = pkgs.writeText "aurora-assistant.json" (builtins.toJSON {
     inference = { url = routerUrl; models = managedModels; startupTimeoutSeconds = cfg.inference.startupTimeoutSeconds; };
     webSearch = { inherit (cfg.webSearch) enable url maxResults language; };
-    execution = { backend = cfg.execution.backend;
+    execution = { backend = cfg.execution.backend; confirmationPolicy = cfg.execution.confirmationPolicy;
       executable = if cfg.execution.backend == "mcp" then "${cfg.execution.package}/bin/aurora-mcdbus" else null; };
     retrieval = {
       inherit (cfg.retrieval) enable model pooling maxTokens maxDocuments threads queryPrefix timeoutSeconds;
@@ -320,7 +320,11 @@ in {
     };
     execution.backend = lib.mkOption {
       type = types.enum [ "direct" "mcp" ]; default = "mcp";
-      description = "MCP transports all controller desktop actions, adapter queries and generic discovery. Mutations require exact human consent. Direct is an explicit legacy rollback option. Overlay IPC keeps its pinned contract.";
+      description = "MCP transports all controller desktop actions, adapter queries and generic discovery. Destructive operations require exact human consent; ordinary operations use bounded policy grants. Direct is an explicit legacy rollback option. Overlay IPC keeps its pinned contract.";
+    };
+    execution.confirmationPolicy = lib.mkOption {
+      type = types.enum [ "destructive" "always" ]; default = "destructive";
+      description = "Destructive policy runs understood requested ordinary operations under standing consent, asks before destructive operations, and refuses unknown effects. Always retains blanket approval. Spoken approval is available during voice operation; exact plans remain available through aurora-control pending.";
     };
     execution.package = lib.mkOption {
       type = types.package; default = packages.mcdbus;

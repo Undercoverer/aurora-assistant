@@ -73,8 +73,23 @@ class MCPDesktop:
                         expires_at=min(prepared['expires_at'], reply['expires_at']))
         return self.bus.consent.prepare(prepared, request)
 
-    def authorize_plan(self, prepared):
-        self.bus.consent.authorize(prepared)
+    def apply_policy(self, prepared, effects):
+        rebound = []
+        try:
+            if len(prepared) != len(effects):
+                raise MCPFailure('mcp.invalid_consent')
+            for plan, effect in zip(prepared, effects):
+                rebound.append(self.bus.consent.apply_policy(plan, effect))
+            return rebound
+        except BaseException:
+            self.bus.consent.revoke(prepared + rebound)
+            raise
+
+    def authorize_routine(self, prepared):
+        self.bus.consent.authorize_routine(prepared)
+
+    def authorize_plan(self, prepared, system_confirmed=False):
+        self.bus.consent.authorize(prepared, system_confirmed=system_confirmed)
 
     def revoke_plan(self, prepared):
         self.bus.consent.revoke(prepared)

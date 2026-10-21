@@ -45,7 +45,8 @@ configuration with each result. Keep the prior NixOS generation available.
    alone does not prove an action happened.
 5. Confirm `execution.backend = "mcp"` and `settings.discoveryMode = "realtime"`. Verify a
    discovered generic call and property change, inspect the exact pending plan,
-   and confirm approval executes only those arguments. System-bus mutations need
+   and verify routine actions do not prompt. On a destructive fixture, confirm spoken
+   approval executes only those arguments. Destructive system-bus mutations need
    the second explicit prompt; use only a harmless test fixture. Do not test by
    changing host-critical system settings.
 6. On a controlled fixture, restart the service or alter a property between prepare

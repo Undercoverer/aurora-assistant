@@ -29,8 +29,11 @@ it is not a claim that upstream mcdbus already provides these guarantees.
 Upstreaming these changes or selecting a server that provides them remains preferable
 before deleting Aurora's working execution backend.
 
-Three tools are exposed:
+Six tools are exposed:
 
+- `list_services(bus)` returns bounded current well-known names.
+- `read_property(...)` derives its type from introspection and checks the owner.
+- `desktop_query(...)` permits only the fixed Aurora adapter Describe/Read/Prepare methods.
 - `describe_object(bus, service, object_path)` returns bounded raw XML and its unique owner.
 - `call_method(..., expected_owner, args)` derives the signature from live XML; args is a JSON array string.
 - `set_property(..., expected_owner, expected_value, value)` derives the property type and requires readable/writable access, a precondition and readback.
