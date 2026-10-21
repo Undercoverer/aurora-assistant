@@ -67,6 +67,9 @@ def measured(fn):
         _starts.append(start)
         outcome = 'success'
         identity = uuid.uuid4().hex[:12]
+        ctx = kwargs.get('ctx')
+        meta = getattr(getattr(getattr(ctx, 'request_context', None), 'meta', None), 'aurora_turn', None)
+        turn = meta if type(meta) is str and len(meta) == 12 and all(c in '0123456789abcdef' for c in meta) else None
         try:
             async with _inflight:
                 return await fn(*args, **kwargs)
@@ -81,10 +84,10 @@ def measured(fn):
             raise
         finally:
             print(json.dumps({'event': 'mcp.call.duration', 'call': identity,
-                'tool': fn.__name__, 'value': round((monotonic() - start) * 1000, 3),
+                'turn': turn, 'tool': fn.__name__, 'value': round((monotonic() - start) * 1000, 3),
                 'unit': 'ms'}), file=sys.stderr)
             print(json.dumps({'event': 'mcp.call.outcome', 'call': identity,
-                'tool': fn.__name__, 'outcome': outcome}), file=sys.stderr)
+                'turn': turn, 'tool': fn.__name__, 'outcome': outcome}), file=sys.stderr)
     return wrapped
 
 
@@ -250,6 +253,21 @@ async def confirm(ctx, request):
         raise ToolError('confirmation_denied')
 
 
+def check_expiry(expires_at):
+    if expires_at and (not math.isfinite(expires_at) or monotonic() >= expires_at):
+        raise ToolError('approval_expired')
+
+
+def correlate(request, confirmation_id, expires_at):
+    check_expiry(expires_at)
+    if expires_at:
+        request['expires_at'] = expires_at
+    if confirmation_id:
+        if len(confirmation_id) != 32 or any(c not in '0123456789abcdef' for c in confirmation_id):
+            raise ToolError('Invalid confirmation identifier')
+        request['confirmation_id'] = confirmation_id
+
+
 async def recheck(connection, service, unique):
     if await owner(connection, service) != unique:
         raise ToolError('owner_mismatch')
@@ -268,7 +286,7 @@ async def describe_object(bus: str, service: str, object_path: str, ctx: Context
 @mcp.tool()
 @measured
 async def call_method(bus: str, service: str, object_path: str, interface: str,
-                      method: str, expected_owner: str, ctx: Context, args: str = '[]') -> dict:
+                      method: str, expected_owner: str, ctx: Context, args: str = '[]', confirmation_id: str = '', expires_at: float = 0) -> dict:
     """Call an introspected method. Caller-supplied signatures are not accepted."""
     connection, unique, node, _ = await describe(ctx, bus, service, object_path, expected_owner)
     selected = member(node, interface, 'method', method)
@@ -281,12 +299,14 @@ async def call_method(bus: str, service: str, object_path: str, interface: str,
     request = {'contract': 'aurora-mcdbus-1', 'bus': bus, 'service': service,
                'owner': unique, 'object_path': object_path, 'interface': interface,
                'method': method, 'args': values, 'signature': ''.join(types)}
+    correlate(request, confirmation_id, expires_at)
     await confirm(ctx, request)
     await recheck(connection, service, unique)
     # Check the selected signature again after user interaction, against the same owner.
     _, _, current, _ = await describe(ctx, bus, service, object_path, unique)
     if ElementTree.tostring(member(current, interface, 'method', method)) != ElementTree.tostring(selected):
         raise ToolError('schema_changed')
+    check_expiry(expires_at)
     result = await send(connection, unique, object_path, interface, method, ''.join(types), body)
     return {'body': serialize_variant(result), 'request_digest': digest(request)}
 
@@ -295,7 +315,7 @@ async def call_method(bus: str, service: str, object_path: str, interface: str,
 @measured
 async def set_property(bus: str, service: str, object_path: str, interface: str,
                        property_name: str, value: str, expected_owner: str,
-                       expected_value: str, ctx: Context) -> dict:
+                       expected_value: str, ctx: Context, confirmation_id: str = '', expires_at: float = 0) -> dict:
     """Set a readable/writable introspected property with precondition and readback."""
     connection, unique, node, _ = await describe(ctx, bus, service, object_path, expected_owner)
     prop = member(node, interface, 'property', property_name)
@@ -308,6 +328,7 @@ async def set_property(bus: str, service: str, object_path: str, interface: str,
     request = {'contract': 'aurora-mcdbus-1', 'bus': bus, 'service': service,
                'owner': unique, 'object_path': object_path, 'interface': interface,
                'property': property_name, 'value': parsed, 'before': before, 'signature': signature}
+    correlate(request, confirmation_id, expires_at)
     await confirm(ctx, request)
     await recheck(connection, service, unique)
     _, _, current, _ = await describe(ctx, bus, service, object_path, unique)
@@ -316,6 +337,7 @@ async def set_property(bus: str, service: str, object_path: str, interface: str,
     actual = await send(connection, unique, object_path, 'org.freedesktop.DBus.Properties', 'Get', 'ss', [interface, property_name])
     if canonical(serialize_variant(actual[0])) != canonical(before):
         raise ToolError('property_changed')
+    check_expiry(expires_at)
     await send(connection, unique, object_path, 'org.freedesktop.DBus.Properties', 'Set', 'ssv',
                [interface, property_name, Variant(signature, converted)])
     actual = await send(connection, unique, object_path, 'org.freedesktop.DBus.Properties', 'Get', 'ss', [interface, property_name])

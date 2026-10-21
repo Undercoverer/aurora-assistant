@@ -1,9 +1,29 @@
 # D-Bus MCP migration: implementation status
 
-Stage 0 draft, based on ea8536460f28da7accb82a6bf4298b86a2d17105.
-No execution backend, routing policy, dependency or Nix option changes here.
-Tests are authored but have not run: the editing session has no execution environment.
-This stage is not accepted until the test suite and representative journal capture pass.
+Stages 0 and the strict-server prerequisite are merged. The Nix server package
+and its installed stdio transport passed CI in PR #3. Aurora keeps the direct
+backend by default. The experimental client migrates generic dbus_call/dbus_set
+execution and introspection; desktop adapters, fixed shortcuts and overlay IPC
+still use their existing paths.
+
+Enable with `programs.aurora-assistant.execution.backend = "mcp";`. Revert to
+`"direct"` and restart the controller to roll back. The server executable is a
+Nix store path; no runtime package installation occurs. Non-Nix installations
+must install the locked `mcp` extra and configure an absolute
+`execution.executable` path.
+
+The controller approves the complete prepared list, then grants one-use consent
+for each exact action. Each elicitation must match the active nonce, endpoint,
+owner, signature, values and expiry. System-bus calls require a second explicit
+prompt. Expiry is rechecked by the server before dispatch. Cancellation and
+failure stop later actions without automatic retries or a direct fallback.
+Existing desktop tokens are retained. Multi-action execution can partially succeed.
+
+Local client validation: backend suite 208 tests, three private-bus skips;
+MCP protocol/process suite 28 tests, four private-bus skips. The private-bus client
+integration runs in CI. These counts describe this change before CI acceptance,
+not KDE hardware validation. Target CPU benchmarks, semantic recall/reranking,
+and full desktop voice acceptance remain outstanding.
 
 ## Measurement boundaries
 
@@ -35,13 +55,10 @@ No sub-500ms latency or reranker calibration claim is established.
 - The existing agent prepares a list of individual action tokens and obtains one
   approval over that list. Preserve expiry and ownership guarantees; do not describe
   this as an atomic plan token or rollback transaction.
-- mcdbus's published documentation has an allow-with-warning confirmation fallback.
-  Stage 1 must require MCDBUS_REQUIRE_ELICITATION=1, then inspect the pinned source
-  and test timeout, disconnect, unsupported elicitation, malformed response and
-  explicit denial. MCDBUS_NOTIFY_CONFIRM=1 alone is not a fail-closed guarantee.
-  Documentation: https://pypi.org/project/mcdbus/ (release 2026.3.6.3).
-  The source link redirected to an inaccessible host during this review; exact
-  tool schemas and exception behavior remain unverified.
+- The audited upstream mcdbus release does not enforce strict elicitation.
+  Environment flags cannot repair that contract. Aurora's strict entry point
+  denies unsupported, malformed, timed-out or declined confirmation. See
+  MCDBUS_SOURCE_AUDIT.md for the inspected source and exact differences.
 - Bind approval to exact bus, unique owner, object path, interface, member, typed
   arguments and token. A well-known-name owner check before invocation still has
   a race. Verify the server can execute against the approved unique owner; otherwise

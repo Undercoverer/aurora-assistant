@@ -151,6 +151,7 @@ class SettingsAgent:
             event('apply.failure.reason', reason='expired', completed_actions=0)
             self.failed = True
             return 'The prepared plan expired during review. No actions were run. Please ask again.'
+        approved = False
         if review['decision'] == 'ask' or any(p['requires_approval'] for p in prepared):
             approved = await self.approval.request(
                 {'request': text, 'plan': prepared, 'review': review}, self.overlay.message,
@@ -162,21 +163,31 @@ class SettingsAgent:
             event('apply.failure.reason', reason='expired', completed_actions=0)
             self.failed = True
             return 'The prepared plan expired. No actions were run. Please ask again.'
-        await self.overlay.state('executing')
-        results = []
-        for step in prepared:
-            try:
-                with phase("desktop.execute", action=step.get("action", {}).get("name", "unknown")):
-                    results.append(await self.desktop.execute(step))
-            except asyncio.CancelledError:
-                event('apply.failure.reason', reason='cancelled', completed_actions=len(results))
-                raise
-            except Exception as exc:
-                failure('apply.failure.reason', exc, reason='execution_error', completed_actions=len(results))
+        mcp_plan = any('mcp_token' in step for step in prepared)
+        if mcp_plan:
+            if approved is not True:
                 self.failed = True
-                results.append('The next action failed or could not be verified. It may have changed state. Remaining actions were not run.')
-                break
-        return ' '.join(results)
+                return 'The MCP plan requires explicit approval. No actions were run.'
+            self.desktop.authorize_plan(prepared)
+        try:
+            await self.overlay.state('executing')
+            results = []
+            for step in prepared:
+                try:
+                    with phase("desktop.execute", action=step.get("action", {}).get("name", "unknown")):
+                        results.append(await self.desktop.execute(step))
+                except asyncio.CancelledError:
+                    event('apply.failure.reason', reason='cancelled', completed_actions=len(results))
+                    raise
+                except Exception as exc:
+                    failure('apply.failure.reason', exc, reason='execution_error', completed_actions=len(results))
+                    self.failed = True
+                    results.append('The next action failed or could not be verified. It may have changed state. Remaining actions were not run.')
+                    break
+            return ' '.join(results)
+        finally:
+            if mcp_plan:
+                self.desktop.revoke_plan(prepared)
 
     async def with_notice(self, work, message):
         task = asyncio.create_task(work)

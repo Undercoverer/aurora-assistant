@@ -69,8 +69,19 @@ async def run(config, text=None):
         approval = Approval()
         approval.catalog = inference.catalog
         cleanup.push_async_callback(approval.close)
+        bus = BusAccess(config.get("settings", {}))
+        if config.get('execution', {}).get('backend', 'direct') == 'mcp':
+            from .mcp_client import Consent, MCPTransport
+            from .mcp_bus import MCPBusAccess
+            async def second_prompt(request):
+                return await approval.request(
+                    {'system_bus_call': request}, overlay.message, timeout=55)
+            consent = Consent(second_prompt)
+            transport = MCPTransport(config['execution']['executable'], consent)
+            await cleanup.enter_async_context(transport.connect())
+            bus = MCPBusAccess(config.get('settings', {}), transport, consent)
         controller.agent = SettingsAgent(config, inference,
-            RemoteDesktop(BusAccess(config.get("settings", {})), executor), approval, overlay)
+            RemoteDesktop(bus, executor), approval, overlay)
         inference.capability_source = controller.agent.desktop.describe
         voice = None
         await approval.start()

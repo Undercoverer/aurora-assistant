@@ -44,6 +44,8 @@ let
   runtimeConfig = pkgs.writeText "aurora-assistant.json" (builtins.toJSON {
     inference = { url = routerUrl; models = managedModels; startupTimeoutSeconds = cfg.inference.startupTimeoutSeconds; };
     webSearch = { inherit (cfg.webSearch) enable url maxResults language; };
+    execution = { backend = cfg.execution.backend;
+      executable = "${cfg.execution.package}/bin/aurora-mcdbus"; };
     apps = cfg.applications;
     dbus_actions = cfg.dbusActions;
     settings = { enable = true; sessionPrefixes = cfg.settings.sessionPrefixes;
@@ -284,6 +286,14 @@ in {
       description = "Review plans outside the validated routine capability policy with a separate local model context. Policy is independent of request wording. Generic D-Bus mutations still require human approval; routine policy cannot override an adapter approval requirement."; };
     safety.model = lib.mkOption {
       description = "Model alias used in a separate tool-free review context. With the managed single-model server this must match planner.model. Review does not replace deterministic approval rules."; type = types.str; default = cfg.planner.model; };
+    execution.backend = lib.mkOption {
+      type = types.enum [ "direct" "mcp" ]; default = "direct";
+      description = "Execution transport for generic D-Bus mutations. MCP is experimental and requires exact per-call consent. Set direct to roll back. Desktop adapters and overlay IPC retain their existing transport.";
+    };
+    execution.package = lib.mkOption {
+      type = types.package; default = packages.mcdbus;
+      description = "Installed strict MCP D-Bus server. No runtime package downloads.";
+    };
     settings.sessionPrefixes = lib.mkOption {
       description = "Allowed session-bus service namespaces for generic discovery and calls. Each entry matches its exact name and dot-separated descendants; empty entries match nothing. Defaults cover KDE, MPRIS, the overlay, and the Aurora desktop adapter. Sensitive services remain excluded."; type = types.listOf types.str; default = [ "org.kde." "org.mpris." "org.example.VoiceOverlay" "org.aurora.Desktop" ]; };
     settings.systemPrefixes = lib.mkOption {

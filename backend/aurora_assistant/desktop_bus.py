@@ -196,6 +196,12 @@ class RemoteDesktop:
         return {**reply['plan'], 'desktop_owner': owner, 'desktop_token': reply['token'],
                 'expires_at': reply['expires_at']}
 
+    def authorize_plan(self, prepared):
+        self.bus.consent.authorize(prepared)
+
+    def revoke_plan(self, prepared):
+        self.bus.consent.revoke(prepared)
+
     async def execute(self, prepared):
         if prepared.get('native_media'):
             return await self.media.execute(prepared)
