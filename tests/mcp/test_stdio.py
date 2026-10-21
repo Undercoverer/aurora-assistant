@@ -19,7 +19,7 @@ class StdioTests(unittest.IsolatedAsyncioTestCase):
         async with asyncio.timeout(20):
             async with Client(transport) as client:
                 tools = {tool.name for tool in await client.list_tools()}
-                self.assertEqual(tools, {'describe_object', 'call_method', 'set_property', 'list_services', 'read_property'})
+                self.assertEqual(tools, {'describe_object', 'call_method', 'set_property', 'list_services', 'read_property', 'desktop_query'})
                 # Invalid endpoints must stop before opening any bus connection.
                 with self.assertRaisesRegex(ToolError, 'Invalid bus or well-known service name'):
                     await client.call_tool('describe_object', {

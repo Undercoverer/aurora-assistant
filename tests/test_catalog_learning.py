@@ -162,6 +162,6 @@ class LearningTests(unittest.IsolatedAsyncioTestCase):
             await scan(catalog, bus, max_objects=1, cursor=cursor)
         inspected = [c.args[0].argument for c in bus.read.call_args_list if c.args[0].name == 'dbus_inspect']
         self.assertEqual([(a['destination'], a['path']) for a in inspected],
-                         [('org.example.A', '/'), ('org.example.B', '/'),
-                          ('org.example.A', '/Device'), ('org.example.B', '/Device')])
+                         [('org.example.A', '/'), ('org.example.A', '/Device'),
+                          ('org.example.B', '/'), ('org.example.B', '/Device')])
         self.assertFalse(cursor.queue)

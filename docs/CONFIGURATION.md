@@ -100,13 +100,13 @@ flake-parts module scope. Existing Kev/planner settings need no migration.
 
 See [the semantic catalog](CAPABILITIES.md#idle-time-semantic-catalog) for cache behavior, limits and background resource controls.
 
-The default discovery mode performs one bounded startup scan and compares schema
-hashes with the previous scan. Optional settings are:
+The default discovery mode refreshes live introspection before each request and
+discards prior native observations. Startup also compares schema hashes. Optional settings are:
 
 ```nix
 programs.aurora-assistant = {
-  execution.backend = "mcp"; # experimental; "direct" is the rollback/default
-  settings.discoveryMode = "startup"; # "periodic" restores the previous crawl
+  execution.backend = "mcp"; # default; "direct" is explicit legacy rollback only
+  settings.discoveryMode = "realtime"; # default; startup/periodic are legacy modes
   settings.scanMaxObjects = 24;
   settings.scanTimeoutSeconds = 6;
   catalog.enrich = false;

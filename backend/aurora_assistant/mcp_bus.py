@@ -1,4 +1,4 @@
-"""Opt-in MCP execution for generic D-Bus calls; legacy reads remain available."""
+"""Strict MCP execution and live introspection for D-Bus calls."""
 import json
 from .settings import BusAccess
 from .mcp_client import MCPFailure, canonical, strict_json, request_digest
@@ -69,6 +69,12 @@ class MCPBusAccess(BusAccess):
         key = 'valueJson' if action.name == 'dbus_set' else 'argumentsJson'
         parsed = strict_json(arg[key])
         prepared = await super().prepare(action)
+        request = self.request_for(prepared, action)
+        return self.consent.prepare(prepared, request)
+
+    def request_for(self, prepared, action):
+        arg = action.argument
+        parsed = strict_json(arg['valueJson' if action.name == 'dbus_set' else 'argumentsJson'])
         request = {'contract': 'aurora-mcdbus-1', 'bus': arg['bus'],
                    'service': arg['destination'], 'owner': prepared['owner'],
                    'object_path': arg['path'], 'interface': arg['interface'],
@@ -77,7 +83,7 @@ class MCPBusAccess(BusAccess):
             request.update(property=arg['property'], value=parsed, before=prepared['before'])
         else:
             request.update(method=arg['method'], args=parsed)
-        return self.consent.prepare(prepared, request)
+        return request
 
     async def execute(self, prepared):
         request = self.consent.begin(prepared)
@@ -99,6 +105,13 @@ class MCPBusAccess(BusAccess):
                 raise MCPFailure('mcp.unverified_result')
             if tool == 'set_property':
                 return f"{request['property']} readback is {json.dumps(result.get('value'))}."
+            if prepared.get('configured_reply') is not None and canonical(result.get('body')) != canonical(prepared['configured_reply']):
+                raise MCPFailure('mcp.unexpected_reply')
+            if prepared.get('adapter_result'):
+                body = result.get('body')
+                if type(body) is not list or len(body) != 1 or type(body[0]) is not str:
+                    raise MCPFailure('mcp.invalid_adapter_reply')
+                return body[0]
             return f"{request['method']} returned {json.dumps(result.get('body'))[:1000]}. Its effects were not independently verified."
         finally:
             self.consent.finish()

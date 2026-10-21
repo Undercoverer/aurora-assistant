@@ -319,8 +319,8 @@ in {
         description = "Recall request deadline; expiry terminates the worker and uses lexical evidence until controller restart."; };
     };
     execution.backend = lib.mkOption {
-      type = types.enum [ "direct" "mcp" ]; default = "direct";
-      description = "Execution transport for generic D-Bus mutations. MCP is experimental and requires exact per-call consent. Set direct to roll back. Desktop adapters and overlay IPC retain their existing transport.";
+      type = types.enum [ "direct" "mcp" ]; default = "mcp";
+      description = "MCP transports all controller desktop actions, adapter queries and generic discovery. Mutations require exact human consent. Direct is an explicit legacy rollback option. Overlay IPC keeps its pinned contract.";
     };
     execution.package = lib.mkOption {
       type = types.package; default = packages.mcdbus;
@@ -331,8 +331,8 @@ in {
     settings.systemPrefixes = lib.mkOption {
       description = "Allowed system-bus service namespaces, matched at dot boundaries; empty entries match nothing. Normal D-Bus and Polkit rules apply. Generic changes always require local approval."; type = types.listOf types.str; default = [ "org.freedesktop.UPower" ]; };
     settings.discoveryMode = lib.mkOption {
-      type = types.enum [ "startup" "periodic" ]; default = "startup";
-      description = "Run one bounded startup scan and compare schema fingerprints. Periodic restores the earlier four-minute crawl. Execution always checks live ownership and types.";
+      type = types.enum [ "realtime" "startup" "periodic" ]; default = "realtime";
+      description = "Realtime refreshes live introspection before every request, discarding old native observations within fixed object/time budgets. Startup and periodic retain legacy scan modes. Execution rechecks live ownership and types.";
     };
     settings.scanMaxObjects = lib.mkOption { type = types.ints.between 1 128; default = 24;
       description = "Maximum objects attempted in each discovery scan."; };

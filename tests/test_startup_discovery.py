@@ -52,3 +52,36 @@ class StartupDiscoveryTests(unittest.IsolatedAsyncioTestCase):
         with patch('aurora_assistant.catalog.time.monotonic', return_value=900):
             self.assertTrue(startup.documents())
             self.assertEqual(periodic.documents(), [])
+
+    async def test_realtime_drops_stale_objects_and_reintrospects_each_turn(self):
+        from aurora_assistant.discovery import refresh_live
+        catalog = CapabilityCatalog()
+        catalog.observe(ACTION, VALUE)
+        inference = SimpleNamespace(config={'settings': {'scanMaxObjects': 2}}, catalog=catalog,
+                                    refresh_capabilities=AsyncMock())
+        bus = SimpleNamespace(read=AsyncMock())
+        bus.read.side_effect = lambda action: [] if action.name == 'dbus_list' else VALUE
+        await refresh_live(inference, bus)
+        self.assertEqual(catalog.documents(), [])
+        self.assertEqual(bus.read.await_count, 2)
+        async def read(action):
+            if action.name == 'dbus_list':
+                return ['org.kde.New'] if action.argument == 'session' else []
+            return VALUE
+        bus.read.side_effect = read
+        await refresh_live(inference, bus)
+        self.assertEqual(catalog.documents()[0]['target']['destination'], 'org.kde.New')
+        self.assertEqual(inference.refresh_capabilities.await_count, 2)
+
+    async def test_live_refresh_finishes_before_planning(self):
+        from aurora_assistant.agent import SettingsAgent
+        order = []
+        async def refresh():
+            order.append('refresh')
+        async def plan(*args, **kwargs):
+            order.append('plan')
+            return {'actions': [], 'reply': 'Ready'}
+        inference = SimpleNamespace(plan=plan)
+        agent = SettingsAgent({'apps': {}}, inference, None, None, None, live_refresh=refresh)
+        self.assertEqual(await agent.run('hello'), 'Ready')
+        self.assertEqual(order, ['refresh', 'plan'])

@@ -45,8 +45,8 @@ let
   customized = evaluate ((import ../examples/customized.nix {}).programs.aurora-assistant);
 in
 assert defaults.programs.aurora-assistant.retrieval.enable == false;
-assert defaults.programs.aurora-assistant.execution.backend == "direct";
-assert defaults.programs.aurora-assistant.settings.discoveryMode == "startup";
+assert defaults.programs.aurora-assistant.execution.backend == "mcp";
+assert defaults.programs.aurora-assistant.settings.discoveryMode == "realtime";
 assert defaults.programs.aurora-assistant.catalog.enrich == false;
 assert sameServices;
 assert legacy.environment.etc."aurora-assistant/models.json".source.outPath ==

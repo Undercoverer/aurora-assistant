@@ -336,6 +336,33 @@ async def describe_object(bus: str, service: str, object_path: str, ctx: Context
 
 @mcp.tool()
 @measured
+async def desktop_query(method: str, expected_owner: str, ctx: Context, args: str = '[]') -> dict:
+    """Read or prepare Aurora adapter state; never apply an action.
+
+    This fixed protocol is not a generic read-method classification. Prepare
+    creates a bounded expiring token only. Apply always uses call_method consent.
+    """
+    permitted = {'Describe': '', 'Read': 's', 'Prepare': 'ss'}
+    if method not in permitted:
+        raise ToolError('Unsupported desktop query')
+    service, path, interface = 'org.aurora.Desktop', '/org/aurora/Desktop', 'org.aurora.Desktop1'
+    connection, unique, node, _ = await describe(ctx, 'session', service, path, expected_owner)
+    selected = member(node, interface, 'method', method)
+    types = [a.get('type', '') for a in selected.findall('arg') if a.get('direction', 'in') == 'in']
+    outputs = ''.join(a.get('type', '') for a in selected.findall('arg') if a.get('direction') == 'out')
+    values = parse_json(args)
+    if ''.join(types) != permitted[method] or outputs != 's' or type(values) is not list or len(values) != len(types):
+        raise ToolError('type_error')
+    body = [typed(t, v) for t, v in zip(types, values)]
+    await recheck(connection, service, unique)
+    result = await send(connection, unique, path, interface, method, ''.join(types), body)
+    if len(result) != 1 or type(result[0]) is not str or len(result[0].encode()) > 65536:
+        raise ToolError('Invalid desktop reply')
+    return {'owner': unique, 'body': result}
+
+
+@mcp.tool()
+@measured
 async def call_method(bus: str, service: str, object_path: str, interface: str,
                       method: str, expected_owner: str, ctx: Context, args: str = '[]', confirmation_id: str = '', expires_at: float = 0) -> dict:
     """Call an introspected method. Caller-supplied signatures are not accepted."""

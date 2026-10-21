@@ -8,9 +8,10 @@ from .telemetry import event, phase, failure
 
 
 class SettingsAgent:
-    def __init__(self, config, inference, desktop, approval, overlay):
+    def __init__(self, config, inference, desktop, approval, overlay, live_refresh=None):
         self.config, self.inference, self.desktop = config, inference, desktop
         self.approval, self.overlay = approval, overlay
+        self.live_refresh = live_refresh
 
     async def run(self, text):
         self.failed = False
@@ -18,6 +19,8 @@ class SettingsAgent:
         if len(text) > 8192:
             self.failed = True
             return 'The request is too long to process safely. Please shorten it. No actions were run.'
+        if self.live_refresh is not None:
+            await self.live_refresh()
         evidence = []
         kev = self.config.get('kev', {})
         kev_active = kev.get('enable', False)

@@ -42,7 +42,7 @@ async def scan(catalog, bus, *, max_objects=24, cursor=None):
                     if len(nested) <= 512:
                         item = (scope, destination, nested)
                         if item not in cursor.seen and item not in cursor.queue and len(cursor.queue) + len(cursor.seen) < 512:
-                            cursor.queue.append(item)
+                            cursor.queue.appendleft(item)
         except Exception as exc:
             failure('capabilities.inspect_failed', exc)
     event('capabilities.scan_done', objects=attempts, queued=len(cursor.queue))
@@ -93,7 +93,7 @@ async def maintain(inference, bus, discover_native=True):
     import os
     from pathlib import Path
     settings = inference.config.get('settings', {})
-    startup = settings.get('discoveryMode', 'startup') == 'startup'
+    startup = settings.get('discoveryMode', 'realtime') != 'periodic'
     cursor = DiscoveryCursor()
     while True:
         await inference.refresh_capabilities()
@@ -109,3 +109,17 @@ async def maintain(inference, bus, discover_native=True):
             compare_snapshot(inference.catalog, cache / 'aurora-assistant' / 'capability-fingerprints.json')
             return
         await asyncio.sleep(240)
+
+
+async def refresh_live(inference, bus):
+    """Replace native hints for this turn; never use stale objects after failure."""
+    settings = inference.config.get('settings', {})
+    inference.catalog.objects.clear()
+    await inference.refresh_capabilities()
+    if not settings.get('enable', True):
+        return
+    try:
+        async with asyncio.timeout(settings.get('scanTimeoutSeconds', 6)):
+            await scan(inference.catalog, bus, max_objects=settings.get('scanMaxObjects', 24))
+    except TimeoutError:
+        event('capabilities.scan_budget_exhausted')

@@ -10,9 +10,9 @@ Start with the [installation guide](docs/QUICKSTART.md),
 [regular-flake or flake-parts/import-tree examples](examples/README.md).
 Use [troubleshooting](docs/TROUBLESHOOTING.md) for unified service reports.
 
-The direct action backend remains the default. The optional strict MCP backend
-handles generic D-Bus execution and bounded discovery with exact approval
-correlation. Embedding recall is also opt-in; it preserves lexical evidence and
+The strict MCP backend is the default for controller desktop actions, adapter
+queries, fixed shortcuts and generic D-Bus execution. Live introspection refreshes
+bounded discovery before each request, with exact approval correlation. Embedding recall is also opt-in; it preserves lexical evidence and
 does not replace Kev or grant approval. See [migration status](docs/MCP_MIGRATION.md),
 [recall evaluation](docs/RECALL_EVALUATION.md), and
 [target-host acceptance](docs/ACCEPTANCE.md) for coverage and remaining gates.

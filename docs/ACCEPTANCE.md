@@ -39,11 +39,11 @@ configuration with each result. Keep the prior NixOS generation available.
    recoverable error. Verify text remains readable and the pinned overlay D-Bus
    methods still work. Record actual wake-to-first-feedback timing separately from
    controller/agent duration metrics.
-4. With the default direct backend, request a harmless single action and a plan of
+4. With the default MCP backend, request a harmless single action and a plan of
    two reversible actions. Inspect actual desktop state. Test ambiguous targets,
    human denial and approval expiry. A returned handler or success-shaped sentence
    alone does not prove an action happened.
-5. Enable `execution.backend = "mcp"`, rebuild and restart the target. Verify a
+5. Confirm `execution.backend = "mcp"` and `settings.discoveryMode = "realtime"`. Verify a
    discovered generic call and property change, inspect the exact pending plan,
    and confirm approval executes only those arguments. System-bus mutations need
    the second explicit prompt; use only a harmless test fixture. Do not test by
@@ -70,8 +70,9 @@ require measured task accuracy, ambiguity behavior and target-CPU latency. The
 current evaluator measures recall only; it cannot justify action selection on its
 own. No replacement model or calibrated thresholds have been selected.
 
-The MCP path currently covers generic execution and discovery. Native adapters,
-fixed shortcuts and overlay IPC retain their existing paths. Removing direct
-invocation requires further staged adapter migration and desktop acceptance.
+The default MCP path covers controller adapter requests, fixed shortcuts, generic
+execution and discovery. Desktop service implementations still perform native
+operations internally. Overlay IPC remains intact. Legacy direct transport is
+retained only as an explicit rollback setting pending desktop acceptance.
 Per-action tokens permit partial execution; no atomic plan transaction or rollback
 is claimed. The strict mcdbus adaptation remains Aurora-maintained code.

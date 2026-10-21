@@ -1,18 +1,26 @@
 # D-Bus MCP migration: implementation status
 
-Stages 0 and the strict-server prerequisite are merged. The Nix server package
-and its installed stdio transport passed CI in PR #3. Aurora keeps the direct
-backend by default. The experimental client migrates generic dbus_call/dbus_set
-execution and machine-readable discovery; desktop adapters, fixed shortcuts and overlay IPC
-still use their existing paths. Generic property reads and service listing use
-bounded read-only MCP tools. Startup discovery now runs once with a fixed budget
-and compares schema hashes. Periodic crawling is an explicit rollback option.
+MCP is the default controller transport for generic calls/properties, fixed
+shortcuts and desktop adapter requests. The server derives wire types from live
+introspection. The fixed desktop_query tool allows only Describe, Read and Prepare
+on org.aurora.Desktop1; it cannot Apply or invoke arbitrary endpoints. Prepare
+creates an expiring token but performs no desktop effect. Apply uses the same
+strict call_method confirmation boundary as generic mutations. Adapter plans,
+owner, token arguments and the shorter adapter expiry are bound to plan approval.
+All actions on this MCP path now require explicit plan approval, including built-in
+controls. Model confidence cannot authorize an action.
 
-Enable with `programs.aurora-assistant.execution.backend = "mcp";`. Revert to
-`"direct"` and restart the controller to roll back. The server executable is a
-Nix store path; no runtime package installation occurs. Non-Nix installations
-must install the locked `mcp` extra and configure an absolute
-`execution.executable` path.
+Live discovery refreshes before each request within object/time bounds. Generic
+prepare and server invocation introspect again, and server confirmation rechecks
+owner/schema. Native utilities inside the desktop service remain implementation
+details of that service. The overlay keeps its pinned D-Bus IPC contract.
+
+`programs.aurora-assistant.execution.backend` defaults to `"mcp"` and
+`settings.discoveryMode` to `"realtime"`. Explicit `"direct"`, `"startup"` and
+`"periodic"` settings remain legacy rollback choices, never automatic fallbacks.
+The server executable is a Nix store path; no runtime package installation occurs.
+Non-Nix installations must install the locked `mcp` extra and configure an
+absolute `execution.executable` path (or install aurora-mcdbus on PATH).
 
 The controller approves the complete prepared list, then grants one-use consent
 for each exact action. Each elicitation must match the active nonce, endpoint,

@@ -71,17 +71,21 @@ async def run(config, text=None):
         cleanup.push_async_callback(approval.close)
         bus = BusAccess(config.get("settings", {}))
         transport = None
-        if config.get('execution', {}).get('backend', 'direct') == 'mcp':
+        if config.get('execution', {}).get('backend', 'mcp') == 'mcp':
             from .mcp_client import Consent, MCPTransport
             from .mcp_bus import MCPBusAccess
+            from .mcp_desktop import MCPDesktop
             async def second_prompt(request):
                 return await approval.request(
                     {'system_bus_call': request}, overlay.message, timeout=55)
             consent = Consent(second_prompt)
             transport = MCPTransport(config['execution']['executable'], consent)
             bus = MCPBusAccess(config.get('settings', {}), transport, consent)
-        controller.agent = SettingsAgent(config, inference,
-            RemoteDesktop(bus, executor), approval, overlay)
+        desktop = MCPDesktop(bus, executor) if transport is not None else RemoteDesktop(bus, executor)
+        controller.agent = SettingsAgent(config, inference, desktop, approval, overlay)
+        if config.get('settings', {}).get('discoveryMode', 'realtime') == 'realtime':
+            from .discovery import refresh_live
+            controller.agent.live_refresh = lambda: refresh_live(inference, bus)
         inference.capability_source = controller.agent.desktop.describe
         voice = None
         await approval.start()
@@ -100,7 +104,7 @@ async def run(config, text=None):
         discovery = asyncio.create_task(maintain(inference, controller.agent.desktop.bus,
                                                 config.get('settings', {}).get('enable', True)))
         cleanup.push_async_callback(stop_task, discovery)
-        if config.get('settings', {}).get('discoveryMode', 'startup') == 'startup':
+        if config.get('settings', {}).get('discoveryMode', 'realtime') != 'periodic':
             await discovery
         if learner is not None:
             learning = asyncio.create_task(learner.run())

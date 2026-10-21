@@ -142,7 +142,7 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
     async def test_tools_exclude_bypass_and_signatures(self):
         async with Client(server.mcp) as client:
             tools = {t.name: t for t in await client.list_tools()}
-        self.assertEqual(set(tools), {'describe_object', 'call_method', 'set_property', 'list_services', 'read_property'})
+        self.assertEqual(set(tools), {'describe_object', 'call_method', 'set_property', 'list_services', 'read_property', 'desktop_query'})
         self.assertNotIn('signature', tools['call_method'].inputSchema['properties'])
         self.assertNotIn('signature', tools['set_property'].inputSchema['properties'])
 

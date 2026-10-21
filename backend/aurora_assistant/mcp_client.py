@@ -55,8 +55,9 @@ class Consent:
         if len(self.pending) >= 64:
             raise MCPFailure('mcp.pending_limit')
         token = secrets.token_hex(16)
-        plan = copy.deepcopy({**plan, 'mcp_token': token, 'expires_at': now + 120})
-        self.pending[token] = (plan, copy.deepcopy({**request, 'expires_at': now + 120}))
+        expiry = min(now + 120, plan.get('expires_at', now + 120))
+        plan = copy.deepcopy({**plan, 'mcp_token': token, 'expires_at': expiry})
+        self.pending[token] = (plan, copy.deepcopy({**request, 'expires_at': expiry}))
         return copy.deepcopy(plan)
 
     def authorize(self, plans):
@@ -160,7 +161,7 @@ class MCPTransport:
                     async with asyncio.timeout(10):
                         await session.initialize()
                         listed = await session.list_tools()
-                        if {t.name for t in listed.tools} != {'describe_object', 'call_method', 'set_property', 'list_services', 'read_property'}:
+                        if {t.name for t in listed.tools} != {'describe_object', 'call_method', 'set_property', 'list_services', 'read_property', 'desktop_query'}:
                             raise MCPFailure('mcp.contract_mismatch')
                     event('mcp.connected')
                     yield self

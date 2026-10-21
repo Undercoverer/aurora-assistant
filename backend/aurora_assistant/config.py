@@ -67,10 +67,12 @@ def _validate_policy(data):
     for key, low, high in [('maxTokens', 16, 512), ('maxDocuments', 1, 256), ('threads', 1, 4)]:
         _validate_number(retrieval, key, low, high, integer=True)
     _validate_number(retrieval, 'timeoutSeconds', 1, 30)
-    execution = data.get('execution', {})
-    if type(execution) is not dict or execution.get('backend', 'direct') not in ('direct', 'mcp'):
+    execution = data.setdefault('execution', {'backend': 'mcp'})
+    if type(execution) is not dict or execution.get('backend', 'mcp') not in ('direct', 'mcp'):
         raise ValueError('execution.backend must be direct or mcp')
-    if execution.get('backend') == 'mcp':
+    if execution.get('backend', 'mcp') == 'mcp':
+        import shutil
+        execution.setdefault('executable', shutil.which('aurora-mcdbus') or '/run/current-system/sw/bin/aurora-mcdbus')
         executable = execution.get('executable')
         if type(executable) is not str or not os.path.isabs(executable):
             raise ValueError('MCP requires an absolute installed executable')
@@ -86,8 +88,8 @@ def _validate_policy(data):
         raise ValueError('tts.wordSync must be boolean')
     for key, low, high in (('idleSeconds', 15, 3600), ('intervalSeconds', 30, 86400), ('timeoutSeconds', 1, 60)):
         _validate_number(data.get('catalog', {}), key, low, high, integer=True)
-    if data.get('settings', {}).get('discoveryMode', 'startup') not in ('startup', 'periodic'):
-        raise ValueError('settings.discoveryMode must be startup or periodic')
+    if data.get('settings', {}).get('discoveryMode', 'realtime') not in ('realtime', 'startup', 'periodic'):
+        raise ValueError('settings.discoveryMode must be realtime, startup or periodic')
     _validate_number(data.get('settings', {}), 'scanMaxObjects', 1, 128, integer=True)
     _validate_number(data.get('settings', {}), 'scanTimeoutSeconds', 1, 30)
     _validate_number(data.get('settings', {}), 'maxRounds', 1, 8, integer=True)

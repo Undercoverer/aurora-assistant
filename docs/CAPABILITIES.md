@@ -1,13 +1,15 @@
 # Discovered D-Bus capabilities
 
-The controller reads `org.aurora.Desktop1.Describe` over the session bus. This
+The controller reads `org.aurora.Desktop1.Describe` through the local MCP server. This
 versioned JSON description comes from the running desktop adapter's unique owner
 and advertises operations, descriptions and argument schemas. It is additive to
 the desktop service; the pinned overlay API is unchanged.
 
 Read-only startup discovery lists running services and follows observed child
 paths. One scan attempts at most 24 objects, seeds at most 150 services per bus,
-and has a six-second budget. It runs before voice capture starts.
+and has a six-second budget. It runs before voice capture starts and refreshes
+before each request in the default realtime mode. Old native observations are
+removed before refreshing, including when the new scan fails or reaches its budget.
 Set settings.discoveryMode to "periodic" to restore the older four-minute crawl.
 settings.scanMaxObjects and settings.scanTimeoutSeconds control the fixed bounds.
 The MCP backend uses machine-readable describe_object, list_services and
@@ -19,7 +21,8 @@ bus policy and is disabled when settings support is disabled.
 Native introspection supplies bus, service, path, interface, member, signature and
 access. Application/theme/color reads supply installed IDs. Native observations
 retain at most 16 objects; the combined catalog exposes at most 256 documents.
-Startup observations remain planning hints for the session and are replaced on reinspection.
+All observations are planning hints. In the explicit startup mode they remain
+for the session; realtime mode replaces them each turn.
 Periodic mode expires entries after five minutes. Adapter
 metadata is refreshed before planning and cleared on refresh failure.
 

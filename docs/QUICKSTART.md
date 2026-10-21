@@ -90,8 +90,8 @@ aurora-control approve TOKEN_SHOWN_BY_PENDING
 aurora-control deny TOKEN_SHOWN_BY_PENDING
 ```
 
-Approval ends when its token expires or the request deadline is reached. Generic D-Bus mutations require approval;
-common built-in controls still pass through the configured model reviewer.
+Approval ends when its token expires or the request deadline is reached. The default MCP backend requires explicit plan approval for all actions, including
+built-in controls. System-bus calls require a second explicit prompt.
 There is no graphical approval dialog yet. A model's confidence never grants
 extra authority.
 
