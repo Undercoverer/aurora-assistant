@@ -15,7 +15,7 @@ def document_text(document):
 
 
 def document_id(document):
-    return hashlib.sha256(document_text(document).encode()).hexdigest()
+    return hashlib.sha256(json.dumps(document, sort_keys=True, ensure_ascii=False, allow_nan=False).encode()).hexdigest()
 
 
 class OnnxEncoder:

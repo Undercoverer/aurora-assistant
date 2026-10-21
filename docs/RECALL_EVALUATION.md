@@ -31,7 +31,7 @@ Export bounded observations:
 
 The export can be truncated; check its truncated field before evaluation. Create
 a JSON array of labeled cases: each object has query and expected (a list of
-document IDs). IDs are SHA256 of the canonical bounded document text computed by
+document IDs). IDs are SHA256 of the complete canonical JSON document computed by
 aurora_assistant.recall.document_id. Use representative paraphrases, ambiguous
 requests, multiple-action requests and unrelated queries. Empty expected lists
 identify unrelated queries. Labels must refer to actual corpus records.

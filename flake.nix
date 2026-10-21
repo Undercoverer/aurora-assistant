@@ -160,12 +160,24 @@
         '';
 
         backend = pkgs.runCommand "aurora-backend-tests" {
+          DBUS_SESSION_BUS_CONFIG = pkgs.writeText "aurora-test-session.conf" ''
+            <busconfig>
+              <type>session</type>
+              <listen>unix:tmpdir=/tmp</listen>
+              <auth>EXTERNAL</auth>
+              <policy context="default">
+                <allow send_destination="*"/>
+                <allow receive_sender="*"/>
+                <allow own="*"/>
+              </policy>
+            </busconfig>
+          '';
           nativeBuildInputs = [ (pkgs.python3.withPackages (p: [ p.httpx p.dbus-next p.numpy p.soundfile p.fastapi
             p.huggingface-hub p.onnxruntime p.tokenizers p.onnx ])) pkgs.dbus ];
         } ''
           export PYTHONPATH=${./backend}
           export AURORA_TEST_CONFIG=${./config/assistant.example.json}
-          dbus-run-session -- python -m unittest discover -s ${./tests} -v
+          dbus-run-session --config-file="$DBUS_SESSION_BUS_CONFIG" -- python -m unittest discover -s ${./tests} -v
           touch $out
         '';
       });

@@ -3,6 +3,7 @@ import asyncio
 import json
 import sys
 from pathlib import Path
+from .telemetry import event
 
 
 class RecallProcess:
@@ -28,6 +29,8 @@ class RecallProcess:
             process.kill()
             async with asyncio.timeout(2):
                 await process.wait()
+
+        event('recall.worker.closed', pid=process.pid, returncode=process.returncode)
 
     async def _exchange(self, request):
         encoded = json.dumps(request, ensure_ascii=False, allow_nan=False).encode() + b'\n'
@@ -61,6 +64,7 @@ class RecallProcess:
                 result = await self._exchange({'config': self.config})
                 if result != {'ready': True}:
                     raise ValueError('Invalid recall startup reply')
+                event('recall.worker.ready', pid=self.process.pid, threads=self.config.get('threads', 1))
         except BaseException:
             self.failed = True
             await self.close()
