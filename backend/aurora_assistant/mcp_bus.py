@@ -6,8 +6,11 @@ from .mcp_client import MCPFailure, canonical, strict_json, request_digest
 
 class MCPBusAccess(BusAccess):
     def __init__(self, config, transport, consent):
-        super().__init__(config)
+        super().__init__({'sessionPrefixes': ['org.kde.', 'org.mpris.', 'org.example.VoiceOverlay', 'org.aurora.Desktop'], **config})
         self.transport, self.consent = transport, consent
+
+    async def call(self, *args, **kwargs):
+        raise MCPFailure('mcp.direct_transport_disabled')
 
     async def read(self, action):
         if action.name == 'dbus_list':

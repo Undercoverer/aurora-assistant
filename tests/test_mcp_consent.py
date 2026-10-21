@@ -21,6 +21,15 @@ class ConsentTests(unittest.IsolatedAsyncioTestCase):
         self.consent.authorize([self.plan])
         return self.consent.begin(self.plan)
 
+    async def test_adapter_expiry_is_not_extended(self):
+        plan = self.consent.prepare({**PLAN, 'expires_at': 110.}, REQUEST)
+        self.assertEqual(plan['expires_at'], 110.)
+        self.consent.authorize([plan])
+        request = self.consent.begin(plan)
+        self.assertEqual(request['expires_at'], 110.)
+        self.now = 110.
+        self.assertFalse(await self.consent.elicit(canonical(request)))
+
     async def test_no_model_or_unapproved_grant(self):
         with self.assertRaisesRegex(MCPFailure, 'invalid_consent'):
             self.consent.begin(self.plan)

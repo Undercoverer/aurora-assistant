@@ -8,6 +8,9 @@ from .mcp_client import canonical, MCPFailure
 class MCPDesktop:
     def __init__(self, bus, executor):
         self.bus, self.executor = bus, executor
+        from .mcp_bus import MCPBusAccess
+        self.adapter_bus = MCPBusAccess({'sessionPrefixes': [NAME], 'systemPrefixes': []},
+                                        bus.transport, bus.consent)
         self.observed_owner = None
 
     async def adapter(self, method, args, owner):
@@ -21,7 +24,7 @@ class MCPDesktop:
         return json.loads(raw)
 
     async def owner(self):
-        return (await self.bus._description({'bus': 'session', 'destination': NAME, 'path': PATH}))['owner']
+        return (await self.adapter_bus._description({'bus': 'session', 'destination': NAME, 'path': PATH}))['owner']
 
     async def describe(self):
         owner = await self.owner()
@@ -61,7 +64,7 @@ class MCPDesktop:
             raise MCPFailure('mcp.invalid_adapter_plan')
         generic = Action('dbus_call', {'bus': 'session', 'destination': NAME, 'path': PATH,
             'interface': INTERFACE, 'method': 'Apply', 'argumentsJson': canonical([reply['token']])})
-        prepared = await self.bus.prepare(generic)
+        prepared = await self.adapter_bus.prepare(generic)
         self.bus.consent.revoke([prepared])
         if prepared['owner'] != owner:
             raise MCPFailure('mcp.owner_mismatch')

@@ -11,7 +11,7 @@ class Inference:
         import httpx
         self.config = config
         from .catalog import CapabilityCatalog
-        self.catalog = CapabilityCatalog(max_age=None if config.get('settings', {}).get('discoveryMode', 'startup') == 'startup' else 300)
+        self.catalog = CapabilityCatalog(max_age=None if config.get('settings', {}).get('discoveryMode', 'realtime') == 'startup' else 300)
         self.capability_source = None
         self.recall = None
         if config.get('retrieval', {}).get('enable', False):
