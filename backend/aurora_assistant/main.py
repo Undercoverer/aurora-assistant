@@ -98,6 +98,8 @@ async def run(config, text=None):
         discovery = asyncio.create_task(maintain(inference, controller.agent.desktop.bus,
                                                 config.get('settings', {}).get('enable', True)))
         cleanup.push_async_callback(stop_task, discovery)
+        if config.get('settings', {}).get('discoveryMode', 'startup') == 'startup':
+            await discovery
         if learner is not None:
             learning = asyncio.create_task(learner.run())
             cleanup.push_async_callback(stop_task, learning)

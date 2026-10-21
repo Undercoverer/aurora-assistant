@@ -71,6 +71,10 @@ def _validate_policy(data):
         raise ValueError('tts.wordSync must be boolean')
     for key, low, high in (('idleSeconds', 15, 3600), ('intervalSeconds', 30, 86400), ('timeoutSeconds', 1, 60)):
         _validate_number(data.get('catalog', {}), key, low, high, integer=True)
+    if data.get('settings', {}).get('discoveryMode', 'startup') not in ('startup', 'periodic'):
+        raise ValueError('settings.discoveryMode must be startup or periodic')
+    _validate_number(data.get('settings', {}), 'scanMaxObjects', 1, 128, integer=True)
+    _validate_number(data.get('settings', {}), 'scanTimeoutSeconds', 1, 30)
     _validate_number(data.get('settings', {}), 'maxRounds', 1, 8, integer=True)
     _validate_number(data.get('kev', {}), 'maxRounds', 1, 4, integer=True)
     _validate_number(data.get('webSearch', {}), 'maxResults', 1, 8, integer=True)

@@ -33,7 +33,7 @@ Initial provisioning requires internet access; normal voice operation is local.
 | `planner` | Generation and complex requests | `model`, `contextSize`, `gpuLayers` |
 | `models` | Asset provisioning | `enable`, `directory`, `revisions` |
 | `inference` | Shared llama.cpp service | `package`, `port`, `startupTimeoutSeconds` |
-| `catalog` | Idle-time D-Bus explanations | `enrich`, `persist`, `idleSeconds` |
+| `catalog` | Optional idle-time D-Bus explanations (off by default) | `enrich`, `persist`, `idleSeconds` |
 | `diagnostics` | Content logging | `logContent` |
 | `webSearch` | Optional online search through a local API | `enable`, `engines` |
 
@@ -97,3 +97,16 @@ import the exported module into the host's NixOS module list, not directly into 
 flake-parts module scope. Existing Kev/planner settings need no migration.
 
 See [the semantic catalog](CAPABILITIES.md#idle-time-semantic-catalog) for cache behavior, limits and background resource controls.
+
+The default discovery mode performs one bounded startup scan and compares schema
+hashes with the previous scan. Optional settings are:
+
+```nix
+programs.aurora-assistant = {
+  execution.backend = "mcp"; # experimental; "direct" is the rollback/default
+  settings.discoveryMode = "startup"; # "periodic" restores the previous crawl
+  settings.scanMaxObjects = 24;
+  settings.scanTimeoutSeconds = 6;
+  catalog.enrich = false;
+};
+```

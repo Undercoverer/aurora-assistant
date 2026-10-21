@@ -32,6 +32,12 @@ class LiveClientTests(unittest.IsolatedAsyncioTestCase):
                     bus = MCPBusAccess({}, transport, consent)
                     endpoint = {'bus': 'session', 'destination': 'org.kde.AuroraMcpFixture',
                                 'path': '/Fixture', 'interface': 'org.kde.AuroraMcpFixture'}
+                    names = await bus.read(Action('dbus_list', 'session'))
+                    self.assertIn(endpoint['destination'], names)
+                    inspected = await bus.read(Action('dbus_inspect', {
+                        k: v for k, v in endpoint.items() if k != 'interface'}))
+                    self.assertTrue(inspected['interfaces'])
+                    self.assertFalse(await bus.read(Action('dbus_get', {**endpoint, 'property': 'Enabled'})))
                     call = await bus.prepare(Action('dbus_call', {**endpoint, 'method': 'SetLevel', 'argumentsJson': '[50]'}))
                     consent.authorize([call])
                     self.assertIn('not independently verified', await bus.execute(call))

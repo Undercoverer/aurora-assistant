@@ -160,7 +160,7 @@ class MCPTransport:
                     async with asyncio.timeout(10):
                         await session.initialize()
                         listed = await session.list_tools()
-                        if {t.name for t in listed.tools} != {'describe_object', 'call_method', 'set_property'}:
+                        if {t.name for t in listed.tools} != {'describe_object', 'call_method', 'set_property', 'list_services', 'read_property'}:
                             raise MCPFailure('mcp.contract_mismatch')
                     event('mcp.connected')
                     yield self

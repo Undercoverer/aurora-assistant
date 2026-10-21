@@ -5,9 +5,13 @@ versioned JSON description comes from the running desktop adapter's unique owner
 and advertises operations, descriptions and argument schemas. It is additive to
 the desktop service; the pinned overlay API is unchanged.
 
-Read-only background discovery lists running services and follows observed child
-paths. Each sweep attempts at most 24 objects, seeds at most 150 services per
-bus, and has a six-second budget. The queue continues across four-minute sweeps and caps each crawl at 512 objects.
+Read-only startup discovery lists running services and follows observed child
+paths. One scan attempts at most 24 objects, seeds at most 150 services per bus,
+and has a six-second budget. It runs before voice capture starts.
+Set settings.discoveryMode to "periodic" to restore the older four-minute crawl.
+settings.scanMaxObjects and settings.scanTimeoutSeconds control the fixed bounds.
+The MCP backend uses machine-readable describe_object, list_services and
+read_property results. These read tools never authorize mutations.
 Empty roots do not evict useful observations. Coverage is partial;
 the planner can inspect additional objects on demand. Generic discovery follows
 bus policy and is disabled when settings support is disabled.
@@ -15,7 +19,8 @@ bus policy and is disabled when settings support is disabled.
 Native introspection supplies bus, service, path, interface, member, signature and
 access. Application/theme/color reads supply installed IDs. Native observations
 retain at most 16 objects; the combined catalog exposes at most 256 documents.
-Entries expire after five minutes and are replaced on reinspection. Adapter
+Startup observations remain planning hints for the session and are replaced on reinspection.
+Periodic mode expires entries after five minutes. Adapter
 metadata is refreshed before planning and cleared on refresh failure.
 
 Kev receives up to 254 stably sorted documents, independent of user wording.
@@ -55,7 +60,7 @@ The NixOS defaults are:
 
 ```nix
 programs.aurora-assistant.catalog = {
-  enrich = true;
+  enrich = false;
   persist = true;
   idleSeconds = 60;
   intervalSeconds = 240;
@@ -95,7 +100,7 @@ aurora-control capabilities > aurora-capabilities.md
 The export labels inferred explanations separately. `catalog.explanation_saved`,
 `catalog.explanation_failed` and `catalog.save_failed` provide diagnostics without
 logging generated text. Discovery remains bounded and partial, with a 16-object
-live cache, five-minute freshness, and a 256-document export limit. This is not a
+live cache and a 256-document export limit. This is not a
 complete KDE knowledge base, a vector search index, or proof of semantic accuracy.
 
 The [D-Bus specification](https://dbus.freedesktop.org/doc/dbus-specification.html#introspection-format)
@@ -103,3 +108,14 @@ defines introspection metadata; semantic explanations are a separate inference.
 The [decision-model guidance](https://huggingface.co/blog/ggml-org/decision-models-in-llamacpp)
 recommends describing candidate options. Whether these generated descriptions
 improve Kev accuracy or latency must still be measured with the actual model.
+
+## Startup comparison
+
+Only hashes of observed schema records persist in
+$XDG_CACHE_HOME/aurora-assistant/capability-fingerprints.json (or ~/.cache).
+The file contains no transcript, property value, generated explanation or
+executable action. It cannot restore capabilities. Added, removed and changed
+counts compare bounded observations, not complete desktop inventories.
+An incomplete scan can report absent observations for still-running services.
+The current session always scans again; preparation and dispatch recheck live
+ownership and types. aurora-control catalog-status includes these counts.

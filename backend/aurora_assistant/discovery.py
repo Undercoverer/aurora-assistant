@@ -48,14 +48,64 @@ async def scan(catalog, bus, *, max_objects=24, cursor=None):
     event('capabilities.scan_done', objects=attempts, queued=len(cursor.queue))
 
 
+def compare_snapshot(catalog, path):
+    """Persist hashes only; cached records are never executable capabilities."""
+    import hashlib
+    import json
+    from pathlib import Path
+    current = {}
+    for doc in catalog.documents()[:256]:
+        target = {k: v for k, v in doc['target'].items() if k != 'owner'}
+        key = json.dumps([target, doc['kind'], doc['name'], doc.get('candidate')], sort_keys=True)
+        identity = hashlib.sha256(key.encode()).hexdigest()
+        content = json.dumps({'target': target, 'detail': doc['detail'],
+                              'description': doc.get('description')}, sort_keys=True)
+        current[identity] = hashlib.sha256(content.encode()).hexdigest()
+    old = {}
+    existed = False
+    try:
+        if path.exists() and path.stat().st_size <= 131072:
+            value = json.loads(path.read_text())
+            if (type(value) is dict and len(value) <= 256 and all(
+                    type(k) is str and type(v) is str and len(k) == len(v) == 64
+                    and all(c in '0123456789abcdef' for c in k + v) for k, v in value.items())):
+                old, existed = value, True
+    except (OSError, ValueError):
+        pass
+    result = {'previous_snapshot': existed, 'observed': len(current),
+              'added': len(current.keys() - old.keys()),
+              'removed': len(old.keys() - current.keys()),
+              'changed': sum(current[k] != old[k] for k in current.keys() & old.keys())}
+    catalog.comparison = result
+    event('capabilities.startup_comparison', **result)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix('.tmp')
+        temporary.write_text(json.dumps(current, sort_keys=True))
+        temporary.chmod(0o600)
+        temporary.replace(path)
+    except OSError as exc:
+        failure('capabilities.snapshot_write_failed', exc)
+    return result
+
+
 async def maintain(inference, bus, discover_native=True):
+    import os
+    from pathlib import Path
+    settings = inference.config.get('settings', {})
+    startup = settings.get('discoveryMode', 'startup') == 'startup'
     cursor = DiscoveryCursor()
     while True:
         await inference.refresh_capabilities()
         if discover_native:
             try:
-                async with asyncio.timeout(6):
-                    await scan(inference.catalog, bus, cursor=cursor)
+                async with asyncio.timeout(settings.get('scanTimeoutSeconds', 6)):
+                    await scan(inference.catalog, bus, cursor=cursor,
+                               max_objects=settings.get('scanMaxObjects', 24))
             except TimeoutError:
                 event('capabilities.scan_budget_exhausted')
+        if startup:
+            cache = Path(os.environ.get('XDG_CACHE_HOME', str(Path.home() / '.cache')))
+            compare_snapshot(inference.catalog, cache / 'aurora-assistant' / 'capability-fingerprints.json')
+            return
         await asyncio.sleep(240)
