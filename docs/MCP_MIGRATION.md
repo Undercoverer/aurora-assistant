@@ -108,3 +108,7 @@ installing application dependencies or models. Actions are pinned to commit IDs
 and the job has read-only repository access. This is a focused instrumentation
 check, not full-suite, Nix, MCP or desktop acceptance. Check the workflow result
 for the exact PR head; adding a workflow does not establish that it passed.
+
+## Source inspection follow-up
+
+The pinned wheel source is now available. See [MCDBUS_SOURCE_AUDIT.md](MCDBUS_SOURCE_AUDIT.md) for verified contract mismatches and the separate strict-server prerequisite. The baseline suite now passes locally (197 tests, three live-bus tests skipped); the initial execution-environment limitation above is historical. No completed execution migration is claimed.
