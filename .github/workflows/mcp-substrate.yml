@@ -5,6 +5,8 @@ on:
       - 'mcp/**'
       - 'tests/mcp/**'
       - 'nix/mcdbus.nix'
+      - 'flake.nix'
+      - 'flake.lock'
       - '.github/workflows/mcp-substrate.yml'
   push:
     branches: ['migration/stage-1-substrate']
@@ -28,3 +30,14 @@ jobs:
           PYTHONPATH: mcp
           AURORA_MCP_TEST_BUS: '1'
         run: dbus-run-session -- python -m unittest discover -s tests/mcp -v
+
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: nixbuild/nix-quick-install-action@2c9db80fb984ceb1bcaa77cdda3fdf8cfba92035
+      - name: Build the package and check installed stdio startup and cleanup
+        run: nix build .#mcdbus --print-build-logs
