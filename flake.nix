@@ -66,7 +66,7 @@
     in {
       nixosModules.default = import ./nix/module.nix self;
       packages = eachSystem (system: pkgs: let
-        env = (pythonSet pkgs).mkVirtualEnv "aurora-python" { aurora-assistant = [ "voice" ]; };
+        env = (pythonSet pkgs).mkVirtualEnv "aurora-python" { aurora-assistant = [ "voice" "mcp" ]; };
         optionEval = nixpkgs.lib.nixosSystem {
           inherit system;
           modules = [ self.nixosModules.default ];

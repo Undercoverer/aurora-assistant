@@ -52,6 +52,14 @@ def _validate_stt(stt):
     _validate_number(stt, 'max_utterance_seconds', 5, 300)
 
 def _validate_policy(data):
+    execution = data.get('execution', {})
+    if type(execution) is not dict or execution.get('backend', 'direct') not in ('direct', 'mcp'):
+        raise ValueError('execution.backend must be direct or mcp')
+    if execution.get('backend') == 'mcp':
+        executable = execution.get('executable')
+        if type(executable) is not str or not os.path.isabs(executable):
+            raise ValueError('MCP requires an absolute installed executable')
+
     for section_name in ('settings', 'kev', 'safety', 'webSearch', 'catalog'):
         section = data.get(section_name, {})
         if type(section) is not dict:

@@ -203,6 +203,19 @@ class ProtocolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.send_mock.await_count, 1)
         self.assertEqual(self.send_mock.call_args.args[4], 'Get')
 
+    async def test_approval_expiry_after_confirmation_never_invokes(self):
+        async def accept_and_expire(*args):
+            self.messages.append('prompted')
+            clock.return_value = 201
+            return {'confirm': True}
+        with patch.object(server, 'monotonic', return_value=100) as clock:
+            async with Client(server.mcp, elicitation_handler=accept_and_expire) as client:
+                with self.assertRaisesRegex(ToolError, '^approval_expired$'):
+                    await client.call_tool('call_method', {**ENDPOINT, 'method': 'SetLevel',
+                                                           'args': '[50]', 'expires_at': 200})
+        self.assertEqual(self.messages, ['prompted'])
+        self.send_mock.assert_not_awaited()
+
     async def test_property_write_and_readback(self):
         self.send_mock.side_effect = [[Variant('b', False)], [], [Variant('b', True)]]
         async with Client(server.mcp, elicitation_handler=self.accept) as client:
