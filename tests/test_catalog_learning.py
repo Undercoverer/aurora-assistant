@@ -81,8 +81,9 @@ class NotesTests(unittest.TestCase):
             catalog.observe(Action('dbus_inspect', {'bus': 'session',
                 'destination': f'org.example.Root{i}', 'path': '/'}),
                 {'interfaces': [], 'children': ['Device']})
-        self.assertEqual(catalog.status()['live_documents'], 1)
+        self.assertLessEqual(len(catalog.objects), 16)
         self.assertEqual(catalog.documents()[0]['name'], 'Pause')
+        self.assertTrue(any(d['kind'] == 'object' for d in catalog.documents()))
 
     def test_status_has_counts_without_note_content(self):
         from aurora_assistant.approval import Approval

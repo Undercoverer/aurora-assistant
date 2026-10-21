@@ -303,8 +303,9 @@ async def list_services(bus: str, ctx: Context) -> dict:
                        'org.freedesktop.DBus', 'ListNames')
     if len(names) != 1 or type(names[0]) is not list:
         raise ToolError('Invalid service list')
-    return {'services': sorted(n for n in names[0] if type(n) is str
-                               and is_bus_name_valid(n) and not n.startswith(':'))[:512]}
+    available = sorted(n for n in names[0] if type(n) is str
+                       and is_bus_name_valid(n) and not n.startswith(':'))
+    return {'services': available[:512], 'truncated': len(available) > 512}
 
 
 @mcp.tool()

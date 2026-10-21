@@ -9,7 +9,7 @@ class MCPDesktop:
     def __init__(self, bus, executor):
         self.bus, self.executor = bus, executor
         from .mcp_bus import MCPBusAccess
-        self.adapter_bus = MCPBusAccess({'sessionPrefixes': [NAME], 'systemPrefixes': []},
+        self.adapter_bus = MCPBusAccess({'discoveryScope': 'restricted', 'sessionPrefixes': [NAME], 'systemPrefixes': []},
                                         bus.transport, bus.consent)
         self.observed_owner = None
 

@@ -90,6 +90,8 @@ def _validate_policy(data):
         _validate_number(data.get('catalog', {}), key, low, high, integer=True)
     if data.get('settings', {}).get('discoveryMode', 'realtime') not in ('realtime', 'startup', 'periodic'):
         raise ValueError('settings.discoveryMode must be realtime, startup or periodic')
+    if data.get('settings', {}).get('discoveryScope', 'all') not in ('all', 'restricted'):
+        raise ValueError('settings.discoveryScope must be all or restricted')
     _validate_number(data.get('settings', {}), 'scanMaxObjects', 1, 128, integer=True)
     _validate_number(data.get('settings', {}), 'scanTimeoutSeconds', 1, 30)
     _validate_number(data.get('settings', {}), 'maxRounds', 1, 8, integer=True)

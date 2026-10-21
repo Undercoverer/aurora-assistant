@@ -8,6 +8,12 @@ class MCPBusAccess(BusAccess):
     def __init__(self, config, transport, consent):
         super().__init__({'sessionPrefixes': ['org.kde.', 'org.mpris.', 'org.example.VoiceOverlay', 'org.aurora.Desktop'], **config})
         self.transport, self.consent = transport, consent
+        self.discovery_scope = config.get('discoveryScope', 'all')
+
+    def allowed(self, bus, destination):
+        if self.discovery_scope == 'all':
+            return bus in ('session', 'system') and not destination.startswith(':')
+        return super().allowed(bus, destination)
 
     async def call(self, *args, **kwargs):
         raise MCPFailure('mcp.direct_transport_disabled')
@@ -18,7 +24,11 @@ class MCPBusAccess(BusAccess):
             names = value.get('services')
             if type(names) is not list or len(names) > 512 or any(type(n) is not str for n in names):
                 raise MCPFailure('mcp.invalid_description')
-            return [n for n in names if self.allowed(action.argument, n)][:150]
+            permitted = [n for n in names if self.allowed(action.argument, n)]
+            return {'services': permitted[:150],
+                    'truncated': bool(value.get('truncated')) or len(permitted) > 150,
+                    'scope': self.discovery_scope,
+                    'note': 'Running services only. Omitted services and installed applications may still exist.'}
         if action.name == 'dbus_get':
             return await self.get(action.argument)
         return (await self._description(action.argument))['description']

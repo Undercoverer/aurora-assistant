@@ -15,7 +15,7 @@ VALUE = {'owner': ':1.2', 'children': [], 'interfaces': [{'name': 'org.kde.Test'
 class StartupDiscoveryTests(unittest.IsolatedAsyncioTestCase):
     async def test_startup_runs_once_and_is_bounded(self):
         catalog = CapabilityCatalog(max_age=None)
-        inference = SimpleNamespace(config={'settings': {'scanMaxObjects': 2}}, catalog=catalog,
+        inference = SimpleNamespace(config={'settings': {'discoveryMode': 'startup', 'scanMaxObjects': 2}}, catalog=catalog,
                                     refresh_capabilities=AsyncMock())
         bus = SimpleNamespace(read=AsyncMock())
         async def read(action):
@@ -71,6 +71,8 @@ class StartupDiscoveryTests(unittest.IsolatedAsyncioTestCase):
         bus.read.side_effect = read
         await refresh_live(inference, bus)
         self.assertEqual(catalog.documents()[0]['target']['destination'], 'org.kde.New')
+        self.assertEqual(catalog.documents()[0]['candidate']['name'], 'dbus_inspect')
+        self.assertFalse(any(call.args[0].name == 'dbus_inspect' for call in bus.read.call_args_list))
         self.assertEqual(inference.refresh_capabilities.await_count, 2)
 
     async def test_live_refresh_finishes_before_planning(self):
@@ -85,3 +87,20 @@ class StartupDiscoveryTests(unittest.IsolatedAsyncioTestCase):
         agent = SettingsAgent({'apps': {}}, inference, None, None, None, live_refresh=refresh)
         self.assertEqual(await agent.run('hello'), 'Ready')
         self.assertEqual(order, ['refresh', 'plan'])
+
+    async def test_realtime_startup_does_not_scan_or_write_fingerprints(self):
+        inference = SimpleNamespace(config={'settings': {'discoveryMode': 'realtime'}},
+                                    catalog=CapabilityCatalog(), refresh_capabilities=AsyncMock())
+        bus = SimpleNamespace(read=AsyncMock())
+        with patch('aurora_assistant.discovery.compare_snapshot') as compare:
+            await maintain(inference, bus)
+        bus.read.assert_not_awaited()
+        compare.assert_not_called()
+
+    async def test_empty_root_exposes_child_inspection_without_guessing(self):
+        catalog = CapabilityCatalog()
+        catalog.observe(ACTION, {'interfaces': [], 'children': ['Device', '../invalid']})
+        docs = catalog.documents()
+        self.assertEqual(len(docs), 1)
+        self.assertEqual(docs[0]['candidate'], {'name': 'dbus_inspect',
+            'argument': {**ACTION.argument, 'path': '/Device'}})

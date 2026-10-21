@@ -19,6 +19,8 @@ async def scan(catalog, bus, *, max_objects=24, cursor=None):
         for scope in ('session', 'system'):
             try:
                 names = await bus.read(Action('dbus_list', scope))
+                if isinstance(names, dict):
+                    names = names['services']
                 cursor.queue.extend((scope, name, '/') for name in names[:150])
             except Exception as exc:
                 failure('capabilities.list_failed', exc, bus=scope)
@@ -93,7 +95,10 @@ async def maintain(inference, bus, discover_native=True):
     import os
     from pathlib import Path
     settings = inference.config.get('settings', {})
-    startup = settings.get('discoveryMode', 'realtime') != 'periodic'
+    mode = settings.get('discoveryMode', 'realtime')
+    if mode == 'realtime':
+        return  # No startup catalog or fingerprints; discover within the request.
+    startup = mode == 'startup'
     cursor = DiscoveryCursor()
     while True:
         await inference.refresh_capabilities()
@@ -112,14 +117,24 @@ async def maintain(inference, bus, discover_native=True):
 
 
 async def refresh_live(inference, bus):
-    """Replace native hints for this turn; never use stale objects after failure."""
+    """Start a request with live service names, never crawl every object."""
     settings = inference.config.get('settings', {})
     inference.catalog.objects.clear()
+    inference.catalog.services.clear()
+    inference.catalog.adapter = None
     await inference.refresh_capabilities()
+    observations = []
     if not settings.get('enable', True):
-        return
-    try:
-        async with asyncio.timeout(settings.get('scanTimeoutSeconds', 6)):
-            await scan(inference.catalog, bus, max_objects=settings.get('scanMaxObjects', 24))
-    except TimeoutError:
-        event('capabilities.scan_budget_exhausted')
+        return observations
+    for scope in ('session', 'system'):
+        action = Action('dbus_list', scope)
+        try:
+            async with asyncio.timeout(settings.get('scanTimeoutSeconds', 6)):
+                value = await bus.read(action)
+            inference.catalog.observe(action, value)
+            observations.append({'action': 'dbus_list', 'argument': scope, 'result': value})
+        except Exception as exc:
+            failure('capabilities.list_failed', exc, bus=scope)
+            observations.append({'action': 'dbus_list', 'argument': scope,
+                                 'error': 'Live service listing failed; service availability is unknown.'})
+    return observations

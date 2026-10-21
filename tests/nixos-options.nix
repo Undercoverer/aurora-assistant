@@ -46,6 +46,7 @@ let
 in
 assert defaults.programs.aurora-assistant.retrieval.enable == false;
 assert defaults.programs.aurora-assistant.execution.backend == "mcp";
+assert defaults.programs.aurora-assistant.settings.discoveryScope == "all";
 assert defaults.programs.aurora-assistant.settings.discoveryMode == "realtime";
 assert defaults.programs.aurora-assistant.catalog.enrich == false;
 assert sameServices;

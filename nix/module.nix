@@ -55,7 +55,7 @@ let
     };
     apps = cfg.applications;
     dbus_actions = cfg.dbusActions;
-    settings = { enable = true; inherit (cfg.settings) discoveryMode scanMaxObjects scanTimeoutSeconds; sessionPrefixes = cfg.settings.sessionPrefixes;
+    settings = { enable = true; inherit (cfg.settings) discoveryMode discoveryScope scanMaxObjects scanTimeoutSeconds; sessionPrefixes = cfg.settings.sessionPrefixes;
       systemPrefixes = cfg.settings.systemPrefixes; maxRounds = cfg.settings.maxRounds; };
     kev = { inherit (cfg.kev) enable url threshold timeoutSeconds maxRounds announceEscalation escalationMessage contextSize; model = kevAlias; };
     safety = { inherit (cfg.safety) enable backend; model = if managedPlanner && cfg.safety.model == cfg.planner.model then plannerAlias else cfg.safety.model; };
@@ -326,18 +326,22 @@ in {
       type = types.package; default = packages.mcdbus;
       description = "Installed strict MCP D-Bus server. No runtime package downloads.";
     };
+    settings.discoveryScope = lib.mkOption {
+      type = types.enum [ "all" "restricted" ]; default = "all";
+      description = "MCP discovery scope. All exposes running well-known services on both buses subject to desktop permissions; restricted applies namespace prefixes. Discovery does not grant execution permission.";
+    };
     settings.sessionPrefixes = lib.mkOption {
       description = "Allowed session-bus service namespaces for generic discovery and calls. Each entry matches its exact name and dot-separated descendants; empty entries match nothing. Defaults cover KDE, MPRIS, the overlay, and the Aurora desktop adapter. Sensitive services remain excluded."; type = types.listOf types.str; default = [ "org.kde." "org.mpris." "org.example.VoiceOverlay" "org.aurora.Desktop" ]; };
     settings.systemPrefixes = lib.mkOption {
       description = "Allowed system-bus service namespaces, matched at dot boundaries; empty entries match nothing. Normal D-Bus and Polkit rules apply. Generic changes always require local approval."; type = types.listOf types.str; default = [ "org.freedesktop.UPower" ]; };
     settings.discoveryMode = lib.mkOption {
       type = types.enum [ "realtime" "startup" "periodic" ]; default = "realtime";
-      description = "Realtime refreshes live introspection before every request, discarding old native observations within fixed object/time budgets. Startup and periodic retain legacy scan modes. Execution rechecks live ownership and types.";
+      description = "Realtime lists running services per request and inspects relevant objects on demand. No startup crawl or cross-request service catalog is used. Startup and periodic retain legacy scan modes. Execution rechecks live ownership and types.";
     };
     settings.scanMaxObjects = lib.mkOption { type = types.ints.between 1 128; default = 24;
-      description = "Maximum objects attempted in each discovery scan."; };
+      description = "Maximum objects attempted in each legacy startup/periodic scan. Realtime inspection is bounded by maxRounds and four actions per round."; };
     settings.scanTimeoutSeconds = lib.mkOption { type = types.numbers.between 1 30; default = 6;
-      description = "Total time budget for each native discovery scan."; };
+      description = "Deadline for each realtime service listing, or each legacy native scan. Individual MCP calls and the complete request also have deadlines."; };
     settings.maxRounds = lib.mkOption {
       description = "Maximum discovery/planning rounds per request. Each round allows at most four actions. No mutations run when discovery exhausts this limit."; type = types.ints.between 1 8; default = 5; };
 

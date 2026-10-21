@@ -19,9 +19,10 @@ class SettingsAgent:
         if len(text) > 8192:
             self.failed = True
             return 'The request is too long to process safely. Please shorten it. No actions were run.'
-        if self.live_refresh is not None:
-            await self.live_refresh()
         evidence = []
+        if self.live_refresh is not None:
+            evidence.extend(await self.live_refresh() or [])
+        initial_evidence_count = len(evidence)
         kev = self.config.get('kev', {})
         kev_active = kev.get('enable', False)
         kev_rounds = 0
@@ -60,7 +61,7 @@ class SettingsAgent:
                 kev_active = False
                 continue
             if any(a.name == 'web_search' for a in actions):
-                if len(actions) != 1 or evidence:
+                if len(actions) != 1 or len(evidence) > initial_evidence_count:
                     return 'Please ask the web question separately from desktop actions.'
                 return await self._search(text, actions[0].argument)
             if not actions:
@@ -89,7 +90,7 @@ class SettingsAgent:
                 evidence.append({'preparation_error': str(exc)[:1000], 'actions': plan['actions']})
                 continue  # No mutations have occurred; let the larger model resolve it.
             return await self._execute_plan(text, prepared)
-        return 'The discovery limit was reached. No changes were made. Please narrow the request.'
+        return 'No suitable D-Bus operation was found within the search limit. No changes were made. This does not establish whether the application is installed.'
 
     async def _observe(self, actions):
         observations = []

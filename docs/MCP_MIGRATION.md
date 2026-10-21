@@ -7,10 +7,14 @@ on org.aurora.Desktop1; it cannot Apply or invoke arbitrary endpoints. Prepare
 creates an expiring token but performs no desktop effect. Apply uses the same
 strict call_method confirmation boundary as generic mutations. Adapter plans,
 owner, token arguments and the shorter adapter expiry are bound to plan approval.
-All actions on this MCP path now require explicit plan approval, including built-in
-controls. Model confidence cannot authorize an action.
+The pending PR still requires plan approval for all MCP actions. This is an interim
+limitation, not the requested final device-assistant policy. Destructive-only approval
+and spoken authorization remain a separate acceptance gate before merging the new
+default. Model confidence must not override required approval.
 
-Live discovery refreshes before each request within object/time bounds. Generic
+Live discovery starts with current service names and follows relevant objects on
+demand within request/round bounds; no startup crawl or persisted service inventory
+is used in realtime mode. Discovery scope defaults to all running well-known services. Generic
 prepare and server invocation introspect again, and server confirmation rechecks
 owner/schema. Native utilities inside the desktop service remain implementation
 details of that service. The overlay keeps its pinned D-Bus IPC contract.

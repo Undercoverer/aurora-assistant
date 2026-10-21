@@ -11,8 +11,8 @@ Start with the [installation guide](docs/QUICKSTART.md),
 Use [troubleshooting](docs/TROUBLESHOOTING.md) for unified service reports.
 
 The strict MCP backend is the default for controller desktop actions, adapter
-queries, fixed shortcuts and generic D-Bus execution. Live introspection refreshes
-bounded discovery before each request, with exact approval correlation. Embedding recall is also opt-in; it preserves lexical evidence and
+queries, fixed shortcuts and generic D-Bus execution. Live service listing and request-driven introspection provide
+bounded discovery for each request, with exact approval correlation. Embedding recall is also opt-in; it preserves lexical evidence and
 does not replace Kev or grant approval. See [migration status](docs/MCP_MIGRATION.md),
 [recall evaluation](docs/RECALL_EVALUATION.md), and
 [target-host acceptance](docs/ACCEPTANCE.md) for coverage and remaining gates.

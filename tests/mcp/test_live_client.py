@@ -34,7 +34,7 @@ class LiveClientTests(unittest.IsolatedAsyncioTestCase):
                     endpoint = {'bus': 'session', 'destination': 'org.kde.AuroraMcpFixture',
                                 'path': '/Fixture', 'interface': 'org.kde.AuroraMcpFixture'}
                     names = await bus.read(Action('dbus_list', 'session'))
-                    self.assertIn(endpoint['destination'], names)
+                    self.assertIn(endpoint['destination'], names['services'])
                     inspected = await bus.read(Action('dbus_inspect', {
                         k: v for k, v in endpoint.items() if k != 'interface'}))
                     self.assertTrue(inspected['interfaces'])
