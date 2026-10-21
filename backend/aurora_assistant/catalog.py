@@ -11,10 +11,12 @@ def words(text):
 
 
 class CapabilityCatalog:
-    def __init__(self, notes=None):
+    def __init__(self, notes=None, max_age=300):
         self.objects = {}
         self.adapter = None
         self.notes = notes
+        self.max_age = max_age
+        self.comparison = None
 
     def advertise(self, snapshot):
         """Replace the live adapter schema atomically; reject malformed metadata."""
@@ -40,7 +42,7 @@ class CapabilityCatalog:
         self.adapter = (time.monotonic(), copy.deepcopy(snapshot))
 
     def advertised(self):
-        if self.adapter is None or time.monotonic() - self.adapter[0] > 300:
+        if self.adapter is None or (self.max_age is not None and time.monotonic() - self.adapter[0] > self.max_age):
             return []
         snapshot = self.adapter[1]
         return [{'target': snapshot['source'], 'kind': 'advertised action', 'name': entry['name'],
@@ -73,7 +75,7 @@ class CapabilityCatalog:
         docs = self.advertised()
         now = time.monotonic()
         for observed, endpoint, value in list(self.objects.values()):
-            if now - observed > 300:
+            if self.max_age is not None and now - observed > self.max_age:
                 continue
             if 'topic' in endpoint:
                 topic = endpoint['topic']
@@ -142,11 +144,12 @@ class CapabilityCatalog:
         return {'live_documents': len(docs),
                 'explained_live_documents': sum('semantic_note' in d for d in docs),
                 'stored_explanations': len(self.notes.entries) if self.notes is not None else 0,
-                'enrichment_enabled': self.notes is not None}
+                'enrichment_enabled': self.notes is not None,
+                'snapshot_comparison': self.comparison}
 
     def markdown(self):
         lines = ['# Observed D-Bus capabilities', '',
-                 'Session cache; expires after five minutes. Signatures do not prove intent or safety.', '']
+                 'Startup observations; calls are rechecked before execution. Signatures do not prove intent or safety.' if self.max_age is None else 'Session cache; expires after five minutes. Signatures do not prove intent or safety.', '']
         for doc in self.documents():
             target = doc['target']
             lines.extend([f"## {doc['kind']}: {doc['name']}", '',

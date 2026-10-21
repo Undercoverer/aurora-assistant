@@ -53,6 +53,8 @@ class LiveTests(unittest.IsolatedAsyncioTestCase):
             response = await client.call_tool('describe_object', {
                 'bus': 'session', 'service': self.service, 'object_path': '/Fixture'})
             self.assertEqual(response.data['owner'], self.bus.unique_name)
+            self.assertEqual(response.data['description']['owner'], self.bus.unique_name)
+            self.assertIn(self.service, [i['name'] for i in response.data['description']['interfaces']])
             await client.call_tool('call_method', {**self.endpoint, 'method': 'SetLevel', 'args': '[50]'})
             await client.call_tool('set_property', {**self.endpoint, 'property_name': 'Enabled',
                                                    'value': 'true', 'expected_value': 'false'})

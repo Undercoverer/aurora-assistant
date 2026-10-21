@@ -11,7 +11,7 @@ class Inference:
         import httpx
         self.config = config
         from .catalog import CapabilityCatalog
-        self.catalog = CapabilityCatalog()
+        self.catalog = CapabilityCatalog(max_age=None if config.get('settings', {}).get('discoveryMode', 'startup') == 'startup' else 300)
         self.capability_source = None
         # Do not inherit HTTP proxies or follow redirects to a remote service.
         self.http = httpx.AsyncClient(timeout=90, trust_env=False, follow_redirects=False)

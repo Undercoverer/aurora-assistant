@@ -275,12 +275,63 @@ async def recheck(connection, service, unique):
     # even if ownership changes immediately after this check.
 
 
+def description(node, unique):
+    interfaces = []
+    for iface in node.findall('interface')[:32]:
+        interfaces.append({
+            'name': iface.get('name', ''),
+            'methods': [{'name': method.get('name', ''),
+                         'input': ''.join(arg.get('type', '') for arg in method.findall('arg') if arg.get('direction', 'in') == 'in'),
+                         'output': ''.join(arg.get('type', '') for arg in method.findall('arg') if arg.get('direction') == 'out'),
+                         'arguments': [{'name': arg.get('name', ''), 'signature': arg.get('type', '')}
+                                       for arg in method.findall('arg') if arg.get('direction', 'in') == 'in']}
+                        for method in iface.findall('method')[:64]],
+            'properties': [{'name': prop.get('name', ''), 'signature': prop.get('type', ''),
+                            'access': prop.get('access', '')} for prop in iface.findall('property')[:64]]})
+    return {'owner': unique, 'children': [n.get('name', '') for n in node.findall('node')[:32]],
+            'interfaces': interfaces}
+
+
+@mcp.tool()
+@measured
+async def list_services(bus: str, ctx: Context) -> dict:
+    """List at most 512 running well-known services; never activate services."""
+    if bus not in ('session', 'system'):
+        raise ToolError('Invalid bus')
+    connection = await ctx.lifespan_context.get_bus(bus)
+    names = await send(connection, 'org.freedesktop.DBus', '/org/freedesktop/DBus',
+                       'org.freedesktop.DBus', 'ListNames')
+    if len(names) != 1 or type(names[0]) is not list:
+        raise ToolError('Invalid service list')
+    return {'services': sorted(n for n in names[0] if type(n) is str
+                               and is_bus_name_valid(n) and not n.startswith(':'))[:512]}
+
+
+@mcp.tool()
+@measured
+async def read_property(bus: str, service: str, object_path: str, interface: str,
+                        property_name: str, expected_owner: str, ctx: Context) -> dict:
+    """Read an introspected readable property from the selected unique owner."""
+    connection, unique, node, _ = await describe(ctx, bus, service, object_path, expected_owner)
+    prop = member(node, interface, 'property', property_name)
+    if prop.get('access') not in ('read', 'readwrite'):
+        raise ToolError('Property is not readable')
+    actual = await send(connection, unique, object_path, 'org.freedesktop.DBus.Properties',
+                        'Get', 'ss', [interface, property_name])
+    if len(actual) != 1 or not isinstance(actual[0], Variant) or actual[0].signature != prop.get('type'):
+        raise ToolError('type_error')
+    result = {'owner': unique, 'signature': prop.get('type'), 'value': serialize_variant(actual[0])}
+    if len(canonical(result).encode()) > 65536:
+        raise ToolError('Property reply exceeds size limit')
+    return result
+
+
 @mcp.tool()
 @measured
 async def describe_object(bus: str, service: str, object_path: str, ctx: Context) -> dict:
     """Return bounded raw XML and the unique owner used to obtain it."""
-    _, unique, _, xml = await describe(ctx, bus, service, object_path)
-    return {'owner': unique, 'xml': xml, 'contract': 'aurora-mcdbus-1'}
+    _, unique, node, xml = await describe(ctx, bus, service, object_path)
+    return {'owner': unique, 'xml': xml, 'description': description(node, unique), 'contract': 'aurora-mcdbus-1'}
 
 
 @mcp.tool()

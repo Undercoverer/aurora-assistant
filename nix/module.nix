@@ -48,7 +48,7 @@ let
       executable = "${cfg.execution.package}/bin/aurora-mcdbus"; };
     apps = cfg.applications;
     dbus_actions = cfg.dbusActions;
-    settings = { enable = true; sessionPrefixes = cfg.settings.sessionPrefixes;
+    settings = { enable = true; inherit (cfg.settings) discoveryMode scanMaxObjects scanTimeoutSeconds; sessionPrefixes = cfg.settings.sessionPrefixes;
       systemPrefixes = cfg.settings.systemPrefixes; maxRounds = cfg.settings.maxRounds; };
     kev = { inherit (cfg.kev) enable url threshold timeoutSeconds maxRounds announceEscalation escalationMessage contextSize; model = kevAlias; };
     safety = { inherit (cfg.safety) enable backend; model = if managedPlanner && cfg.safety.model == cfg.planner.model then plannerAlias else cfg.safety.model; };
@@ -262,7 +262,7 @@ in {
     kev.threshold = lib.mkOption { type = types.numbers.between 0.5 1; default = 0.95;
       description = "Minimum selected-option probability for automatic routing or low-risk review. Generic D-Bus mutations still require approval."; };
     catalog = {
-      enrich = lib.mkOption { type = types.bool; default = true;
+      enrich = lib.mkOption { type = types.bool; default = false;
         description = "Use the local planner while idle to write unverified explanations of observed D-Bus members. No commands execute during enrichment. Wake/speech activity cancels the client request; server cancellation latency depends on the backend."; };
       persist = lib.mkOption { type = types.bool; default = true;
         description = "Cache up to 512 model explanations for seven days under the desktop user's XDG cache directory. Only explanations and signature fingerprints persist; live executable capabilities must be rediscovered. Cached text can contain service or application names."; };
@@ -298,6 +298,14 @@ in {
       description = "Allowed session-bus service namespaces for generic discovery and calls. Each entry matches its exact name and dot-separated descendants; empty entries match nothing. Defaults cover KDE, MPRIS, the overlay, and the Aurora desktop adapter. Sensitive services remain excluded."; type = types.listOf types.str; default = [ "org.kde." "org.mpris." "org.example.VoiceOverlay" "org.aurora.Desktop" ]; };
     settings.systemPrefixes = lib.mkOption {
       description = "Allowed system-bus service namespaces, matched at dot boundaries; empty entries match nothing. Normal D-Bus and Polkit rules apply. Generic changes always require local approval."; type = types.listOf types.str; default = [ "org.freedesktop.UPower" ]; };
+    settings.discoveryMode = lib.mkOption {
+      type = types.enum [ "startup" "periodic" ]; default = "startup";
+      description = "Run one bounded startup scan and compare schema fingerprints. Periodic restores the earlier four-minute crawl. Execution always checks live ownership and types.";
+    };
+    settings.scanMaxObjects = lib.mkOption { type = types.ints.between 1 128; default = 24;
+      description = "Maximum objects attempted in each discovery scan."; };
+    settings.scanTimeoutSeconds = lib.mkOption { type = types.numbers.between 1 30; default = 6;
+      description = "Total time budget for each native discovery scan."; };
     settings.maxRounds = lib.mkOption {
       description = "Maximum discovery/planning rounds per request. Each round allows at most four actions. No mutations run when discovery exhausts this limit."; type = types.ints.between 1 8; default = 5; };
 

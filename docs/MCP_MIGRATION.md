@@ -3,8 +3,10 @@
 Stages 0 and the strict-server prerequisite are merged. The Nix server package
 and its installed stdio transport passed CI in PR #3. Aurora keeps the direct
 backend by default. The experimental client migrates generic dbus_call/dbus_set
-execution and introspection; desktop adapters, fixed shortcuts and overlay IPC
-still use their existing paths.
+execution and machine-readable discovery; desktop adapters, fixed shortcuts and overlay IPC
+still use their existing paths. Generic property reads and service listing use
+bounded read-only MCP tools. Startup discovery now runs once with a fixed budget
+and compares schema hashes. Periodic crawling is an explicit rollback option.
 
 Enable with `programs.aurora-assistant.execution.backend = "mcp";`. Revert to
 `"direct"` and restart the controller to roll back. The server executable is a

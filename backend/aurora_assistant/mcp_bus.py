@@ -9,8 +9,30 @@ class MCPBusAccess(BusAccess):
         super().__init__(config)
         self.transport, self.consent = transport, consent
 
-    async def describe(self, arg):
-        from dbus_next.introspection import Node
+    async def read(self, action):
+        if action.name == 'dbus_list':
+            value = await self.transport.call('list_services', {'bus': action.argument})
+            names = value.get('services')
+            if type(names) is not list or len(names) > 512 or any(type(n) is not str for n in names):
+                raise MCPFailure('mcp.invalid_description')
+            return [n for n in names if self.allowed(action.argument, n)][:150]
+        if action.name == 'dbus_get':
+            return await self.get(action.argument)
+        return (await self._description(action.argument))['description']
+
+    async def get(self, arg, owner=None):
+        if owner is None:
+            owner = (await self._description(arg))['owner']
+        if not self.allowed(arg['bus'], arg['destination']):
+            raise ValueError('D-Bus service is outside configured discovery scope')
+        result = await self.transport.call('read_property', {
+            'bus': arg['bus'], 'service': arg['destination'], 'object_path': arg['path'],
+            'interface': arg['interface'], 'property_name': arg['property'], 'expected_owner': owner})
+        if result.get('owner') != owner or 'value' not in result:
+            raise MCPFailure('mcp.invalid_description')
+        return result['value']
+
+    async def _description(self, arg):
         if not self.allowed(arg['bus'], arg['destination']):
             raise ValueError('D-Bus service is outside configured discovery scope')
         value = await self.transport.call('describe_object', {
@@ -19,6 +41,16 @@ class MCPBusAccess(BusAccess):
                 or type(value.get('owner')) is not str or not value['owner'].startswith(':')
                 or type(value.get('xml')) is not str or len(value['xml'].encode()) > 131072):
             raise MCPFailure('mcp.invalid_description')
+        described = value.get('description')
+        if (type(described) is not dict or described.get('owner') != value['owner']
+                or type(described.get('interfaces')) is not list or len(described['interfaces']) > 32
+                or type(described.get('children')) is not list or len(described['children']) > 32):
+            raise MCPFailure('mcp.invalid_description')
+        return value
+
+    async def describe(self, arg):
+        from dbus_next.introspection import Node
+        value = await self._description(arg)
         # The pinned strict server has already rejected entity/DTD processing.
         # Also reject internal subsets at this client boundary before Node.parse.
         from xml.parsers import expat
