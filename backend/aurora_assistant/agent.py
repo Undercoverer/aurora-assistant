@@ -141,12 +141,14 @@ class SettingsAgent:
         review = await self._review(text, prepared)
         event("review.result", decision=review["decision"])
         if review['decision'] == 'block':
+            event('apply.failure.reason', reason='policy', completed_actions=0)
             return 'No changes were made. ' + review['reason']
         # Desktop tokens use this host's monotonic clock. Leave a short
         # transport margin and never ask for approval beyond plan validity.
         deadlines = [p['expires_at'] for p in prepared if 'expires_at' in p]
         deadline = min(deadlines) - 2 if deadlines else float('inf')
         if time.monotonic() >= deadline:
+            event('apply.failure.reason', reason='expired', completed_actions=0)
             self.failed = True
             return 'The prepared plan expired during review. No actions were run. Please ask again.'
         if review['decision'] == 'ask' or any(p['requires_approval'] for p in prepared):
@@ -154,8 +156,10 @@ class SettingsAgent:
                 {'request': text, 'plan': prepared, 'review': review}, self.overlay.message,
                 timeout=min(120, deadline - time.monotonic()))
             if not approved:
+                event('apply.failure.reason', reason='not_approved', completed_actions=0)
                 return 'The change was not approved. No actions were run.'
         if time.monotonic() >= deadline:
+            event('apply.failure.reason', reason='expired', completed_actions=0)
             self.failed = True
             return 'The prepared plan expired. No actions were run. Please ask again.'
         await self.overlay.state('executing')
@@ -164,7 +168,11 @@ class SettingsAgent:
             try:
                 with phase("desktop.execute", action=step.get("action", {}).get("name", "unknown")):
                     results.append(await self.desktop.execute(step))
-            except Exception:
+            except asyncio.CancelledError:
+                event('apply.failure.reason', reason='cancelled', completed_actions=len(results))
+                raise
+            except Exception as exc:
+                failure('apply.failure.reason', exc, reason='execution_error', completed_actions=len(results))
                 self.failed = True
                 results.append('The next action failed or could not be verified. It may have changed state. Remaining actions were not run.')
                 break

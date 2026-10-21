@@ -80,3 +80,18 @@ def phase(name, **fields):
 
 def new_turn():
     return turn_id.set(uuid.uuid4().hex[:12])
+
+
+@contextmanager
+def duration(name, **fields):
+    """Measure a boundary, including cancellation, without claiming action success."""
+    start = monotonic()
+    completion = "returned"
+    try:
+        yield
+    except BaseException:
+        completion = "raised"
+        raise
+    finally:
+        event(name, value=round((monotonic() - start) * 1000, 3),
+              unit="ms", completion=completion, **fields)
