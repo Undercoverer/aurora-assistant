@@ -1,0 +1,31 @@
+name: Nix deployment
+on:
+  pull_request:
+    paths:
+      - 'flake.*'
+      - 'nix/**'
+      - 'backend/**'
+      - 'src/**'
+      - 'qml/**'
+      - 'CMakeLists.txt'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'tests/nixos-options.nix'
+      - '.github/workflows/nix.yml'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        output: ['assistant', 'default', 'docs', 'checks.x86_64-linux.configuration']
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: nixbuild/nix-quick-install-action@2c9db80fb984ceb1bcaa77cdda3fdf8cfba92035
+      - name: Build locked output
+        run: nix build ".#${{ matrix.output }}" --print-build-logs
