@@ -19,6 +19,8 @@ async def scan(catalog, bus, *, max_objects=24, cursor=None):
         for scope in ('session', 'system'):
             try:
                 names = await bus.read(Action('dbus_list', scope))
+                if isinstance(names, dict):
+                    names = names['services']
                 cursor.queue.extend((scope, name, '/') for name in names[:150])
             except Exception as exc:
                 failure('capabilities.list_failed', exc, bus=scope)
@@ -42,7 +44,7 @@ async def scan(catalog, bus, *, max_objects=24, cursor=None):
                     if len(nested) <= 512:
                         item = (scope, destination, nested)
                         if item not in cursor.seen and item not in cursor.queue and len(cursor.queue) + len(cursor.seen) < 512:
-                            cursor.queue.append(item)
+                            cursor.queue.appendleft(item)
         except Exception as exc:
             failure('capabilities.inspect_failed', exc)
     event('capabilities.scan_done', objects=attempts, queued=len(cursor.queue))
@@ -93,7 +95,10 @@ async def maintain(inference, bus, discover_native=True):
     import os
     from pathlib import Path
     settings = inference.config.get('settings', {})
-    startup = settings.get('discoveryMode', 'startup') == 'startup'
+    mode = settings.get('discoveryMode', 'realtime')
+    if mode == 'realtime':
+        return  # No startup catalog or fingerprints; discover within the request.
+    startup = mode == 'startup'
     cursor = DiscoveryCursor()
     while True:
         await inference.refresh_capabilities()
@@ -109,3 +114,27 @@ async def maintain(inference, bus, discover_native=True):
             compare_snapshot(inference.catalog, cache / 'aurora-assistant' / 'capability-fingerprints.json')
             return
         await asyncio.sleep(240)
+
+
+async def refresh_live(inference, bus):
+    """Start a request with live service names, never crawl every object."""
+    settings = inference.config.get('settings', {})
+    inference.catalog.objects.clear()
+    inference.catalog.services.clear()
+    inference.catalog.adapter = None
+    await inference.refresh_capabilities()
+    observations = []
+    if not settings.get('enable', True):
+        return observations
+    for scope in ('session', 'system'):
+        action = Action('dbus_list', scope)
+        try:
+            async with asyncio.timeout(settings.get('scanTimeoutSeconds', 6)):
+                value = await bus.read(action)
+            inference.catalog.observe(action, value)
+            observations.append({'action': 'dbus_list', 'argument': scope, 'result': value})
+        except Exception as exc:
+            failure('capabilities.list_failed', exc, bus=scope)
+            observations.append({'action': 'dbus_list', 'argument': scope,
+                                 'error': 'Live service listing failed; service availability is unknown.'})
+    return observations

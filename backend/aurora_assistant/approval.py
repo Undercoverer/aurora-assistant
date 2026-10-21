@@ -28,6 +28,7 @@ class Approval:
         self.server = None
         self.path = None
         self.request_active = False
+        self.expiry_handle = None
 
     async def start(self):
         self.path = socket_path()
@@ -107,28 +108,45 @@ class Approval:
             except (TimeoutError, ConnectionError, OSError):
                 pass
 
-    async def request(self, detail, notify, timeout=120):
+    def stage(self, detail, timeout=120):
+        """Expose one exact pending plan for either spoken or local CLI consent."""
         if self.request_active:
             raise RuntimeError('Another approval is pending')
-        pending = {**copy.deepcopy(detail), 'id': secrets.token_hex(16)}
+        self.pending = {**copy.deepcopy(detail), 'id': secrets.token_hex(16)}
         self.request_active = True
         self.future = asyncio.get_running_loop().create_future()
-        self.pending = pending
+        def expire():
+            if self.future and not self.future.done():
+                self.future.set_result(False)
+                self.pending = None
+                event('approval.expired')
+        self.expiry_handle = asyncio.get_running_loop().call_later(max(0, timeout), expire)
         event('approval.pending', timeout_seconds=timeout)
+        return self.pending['id'], self.future
+
+    def clear(self):
+        if self.expiry_handle:
+            self.expiry_handle.cancel()
+            self.expiry_handle = None
+        if self.future and not self.future.done():
+            self.future.cancel()
+        self.pending = None
+        self.request_active = False
+
+    async def request(self, detail, notify, timeout=120):
+        _, future = self.stage(detail, timeout)
         try:
             async with asyncio.timeout(timeout):
                 await notify('This change needs approval in the local approval control.')
-                return await self.future
-        except asyncio.TimeoutError:
-            event("approval.expired")
+                return await future
+        except TimeoutError:
             return False
         finally:
-            self.request_active = False
-            self.pending = None
-            if not self.future.done():
-                self.future.cancel()
+            self.clear()
 
     async def close(self):
+        if self.expiry_handle:
+            self.expiry_handle.cancel()
         if self.future and not self.future.done():
             self.future.set_result(False)
         if self.server:

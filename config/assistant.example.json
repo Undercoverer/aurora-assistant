@@ -46,7 +46,8 @@
     "systemPrefixes": [
       "org.freedesktop.UPower"
     ],
-    "maxRounds": 5
+    "maxRounds": 5,
+    "discoveryMode": "realtime"
   },
   "kev": {
     "enable": true,
@@ -88,5 +89,9 @@
       "hf.co/Qwen/Qwen3-4B-GGUF:Q4_K_M"
     ],
     "startupTimeoutSeconds": 180
+  },
+  "execution": {
+    "backend": "mcp",
+    "executable": "/run/current-system/sw/bin/aurora-mcdbus"
   }
 }

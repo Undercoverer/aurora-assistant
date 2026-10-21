@@ -125,7 +125,7 @@ class LifecycleTests(unittest.IsolatedAsyncioTestCase):
              patch.object(main, 'Approval', return_value=approval), \
              patch.object(main, 'Controller', return_value=controller), \
              patch('aurora_assistant.discovery.compare_snapshot'):
-            config = {'apps': {}, 'commands': {}, 'settings': {'enable': False}}
+            config = {'apps': {}, 'commands': {}, 'execution': {'backend': 'direct'}, 'settings': {'enable': False}}
             inference.config = config
             if reset_fails or startup_fails or overlay_fails:
                 with self.assertRaises(RuntimeError):
@@ -209,7 +209,7 @@ class VoiceShutdownTests(unittest.IsolatedAsyncioTestCase):
              patch.object(main, 'Approval', return_value=approval), \
              patch('aurora_assistant.voice.Voice', return_value=voice), \
              patch('aurora_assistant.discovery.maintain', new_callable=AsyncMock):
-            task = asyncio.create_task(main.run({'apps': {}, 'commands': {}, 'stt': {}}))
+            task = asyncio.create_task(main.run({'apps': {}, 'commands': {}, 'stt': {}, 'execution': {'backend': 'direct'}}))
             try:
                 self.assertTrue(await asyncio.to_thread(entered.wait, 2))
                 task.cancel()

@@ -81,8 +81,9 @@ class NotesTests(unittest.TestCase):
             catalog.observe(Action('dbus_inspect', {'bus': 'session',
                 'destination': f'org.example.Root{i}', 'path': '/'}),
                 {'interfaces': [], 'children': ['Device']})
-        self.assertEqual(catalog.status()['live_documents'], 1)
+        self.assertLessEqual(len(catalog.objects), 16)
         self.assertEqual(catalog.documents()[0]['name'], 'Pause')
+        self.assertTrue(any(d['kind'] == 'object' for d in catalog.documents()))
 
     def test_status_has_counts_without_note_content(self):
         from aurora_assistant.approval import Approval
@@ -162,6 +163,6 @@ class LearningTests(unittest.IsolatedAsyncioTestCase):
             await scan(catalog, bus, max_objects=1, cursor=cursor)
         inspected = [c.args[0].argument for c in bus.read.call_args_list if c.args[0].name == 'dbus_inspect']
         self.assertEqual([(a['destination'], a['path']) for a in inspected],
-                         [('org.example.A', '/'), ('org.example.B', '/'),
-                          ('org.example.A', '/Device'), ('org.example.B', '/Device')])
+                         [('org.example.A', '/'), ('org.example.A', '/Device'),
+                          ('org.example.B', '/'), ('org.example.B', '/Device')])
         self.assertFalse(cursor.queue)

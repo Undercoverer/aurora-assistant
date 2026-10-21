@@ -303,8 +303,9 @@ async def list_services(bus: str, ctx: Context) -> dict:
                        'org.freedesktop.DBus', 'ListNames')
     if len(names) != 1 or type(names[0]) is not list:
         raise ToolError('Invalid service list')
-    return {'services': sorted(n for n in names[0] if type(n) is str
-                               and is_bus_name_valid(n) and not n.startswith(':'))[:512]}
+    available = sorted(n for n in names[0] if type(n) is str
+                       and is_bus_name_valid(n) and not n.startswith(':'))
+    return {'services': available[:512], 'truncated': len(available) > 512}
 
 
 @mcp.tool()
@@ -332,6 +333,33 @@ async def describe_object(bus: str, service: str, object_path: str, ctx: Context
     """Return bounded raw XML and the unique owner used to obtain it."""
     _, unique, node, xml = await describe(ctx, bus, service, object_path)
     return {'owner': unique, 'xml': xml, 'description': description(node, unique), 'contract': 'aurora-mcdbus-1'}
+
+
+@mcp.tool()
+@measured
+async def desktop_query(method: str, expected_owner: str, ctx: Context, args: str = '[]') -> dict:
+    """Read or prepare Aurora adapter state; never apply an action.
+
+    This fixed protocol is not a generic read-method classification. Prepare
+    creates a bounded expiring token only. Apply always uses call_method consent.
+    """
+    permitted = {'Describe': '', 'Read': 's', 'Prepare': 'ss'}
+    if method not in permitted:
+        raise ToolError('Unsupported desktop query')
+    service, path, interface = 'org.aurora.Desktop', '/org/aurora/Desktop', 'org.aurora.Desktop1'
+    connection, unique, node, _ = await describe(ctx, 'session', service, path, expected_owner)
+    selected = member(node, interface, 'method', method)
+    types = [a.get('type', '') for a in selected.findall('arg') if a.get('direction', 'in') == 'in']
+    outputs = ''.join(a.get('type', '') for a in selected.findall('arg') if a.get('direction') == 'out')
+    values = parse_json(args)
+    if ''.join(types) != permitted[method] or outputs != 's' or type(values) is not list or len(values) != len(types):
+        raise ToolError('type_error')
+    body = [typed(t, v) for t, v in zip(types, values)]
+    await recheck(connection, service, unique)
+    result = await send(connection, unique, path, interface, method, ''.join(types), body)
+    if len(result) != 1 or type(result[0]) is not str or len(result[0].encode()) > 65536:
+        raise ToolError('Invalid desktop reply')
+    return {'owner': unique, 'body': result}
 
 
 @mcp.tool()

@@ -1,23 +1,39 @@
 # D-Bus MCP migration: implementation status
 
-Stages 0 and the strict-server prerequisite are merged. The Nix server package
-and its installed stdio transport passed CI in PR #3. Aurora keeps the direct
-backend by default. The experimental client migrates generic dbus_call/dbus_set
-execution and machine-readable discovery; desktop adapters, fixed shortcuts and overlay IPC
-still use their existing paths. Generic property reads and service listing use
-bounded read-only MCP tools. Startup discovery now runs once with a fixed budget
-and compares schema hashes. Periodic crawling is an explicit rollback option.
+MCP is the default controller transport for generic calls/properties, fixed
+shortcuts and desktop adapter requests. The server derives wire types from live
+introspection. The fixed desktop_query tool allows only Describe, Read and Prepare
+on org.aurora.Desktop1; it cannot Apply or invoke arbitrary endpoints. Prepare
+creates an expiring token but performs no desktop effect. Apply uses the same
+strict call_method confirmation boundary as generic mutations. Adapter plans,
+owner, token arguments and the shorter adapter expiry are bound to plan approval.
+The default device policy executes understood, requested routine actions without
+an approval prompt. Destructive plans require approval of the complete exact list;
+voice mode accepts a separate affirmative follow-up. Unknown or unrequested effects
+stop before execution. Known adapter effects are checked locally; generic effects
+use Kev decisions with Qwen escalation. Deterministic approval floors cannot be
+lowered by model confidence, but these floors are not a complete effect detector.
+Model effect classification still needs target-device accuracy evaluation.
+Set `execution.confirmationPolicy = "always"` to require approval for every MCP plan.
 
-Enable with `programs.aurora-assistant.execution.backend = "mcp";`. Revert to
-`"direct"` and restart the controller to roll back. The server executable is a
-Nix store path; no runtime package installation occurs. Non-Nix installations
-must install the locked `mcp` extra and configure an absolute
-`execution.executable` path.
+Live discovery starts with current service names and follows relevant objects on
+demand within request/round bounds; no startup crawl or persisted service inventory
+is used in realtime mode. Discovery scope defaults to all running well-known services. Generic
+prepare and server invocation introspect again, and server confirmation rechecks
+owner/schema. Native utilities inside the desktop service remain implementation
+details of that service. The overlay keeps its pinned D-Bus IPC contract.
+
+`programs.aurora-assistant.execution.backend` defaults to `"mcp"` and
+`settings.discoveryMode` to `"realtime"`. Explicit `"direct"`, `"startup"` and
+`"periodic"` settings remain legacy rollback choices, never automatic fallbacks.
+The server executable is a Nix store path; no runtime package installation occurs.
+Non-Nix installations must install the locked `mcp` extra and configure an
+absolute `execution.executable` path (or install aurora-mcdbus on PATH).
 
 The controller approves the complete prepared list, then grants one-use consent
 for each exact action. Each elicitation must match the active nonce, endpoint,
-owner, signature, values and expiry. System-bus calls require a second explicit
-prompt. Expiry is rechecked by the server before dispatch. Cancellation and
+owner, signature, values and expiry. Destructive system-bus calls require a second explicit
+prompt; routine calls use the exact standing policy grant. Expiry is rechecked by the server before dispatch. Cancellation and
 failure stop later actions without automatic retries or a direct fallback.
 Existing desktop tokens are retained. Multi-action execution can partially succeed.
 

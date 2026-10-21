@@ -13,6 +13,7 @@ def words(text):
 class CapabilityCatalog:
     def __init__(self, notes=None, max_age=300):
         self.objects = {}
+        self.services = {}
         self.adapter = None
         self.notes = notes
         self.max_age = max_age
@@ -51,6 +52,11 @@ class CapabilityCatalog:
                 for entry in copy.deepcopy(snapshot['description']['actions'])]
 
     def observe(self, action, value):
+        if action.name == 'dbus_list':
+            names = value.get('services', []) if isinstance(value, dict) else value
+            if isinstance(names, list):
+                self.services[action.argument] = [n for n in names[:150] if type(n) is str and len(n) <= 255]
+            return
         if action.name == 'desktop_read' and action.argument in {'applications', 'themes', 'colors'}:
             if isinstance(value, (dict, list)):
                 key = 'desktop:' + action.argument
@@ -65,11 +71,13 @@ class CapabilityCatalog:
         key = json.dumps(endpoint, sort_keys=True)
         # A new observation replaces the whole object, including removed members.
         self.objects.pop(key, None)
-        if not value.get('interfaces'):
+        if not value.get('interfaces') and not value.get('children'):
             return  # Empty tree roots must not evict useful member observations.
         self.objects[key] = (time.monotonic(), endpoint, copy.deepcopy(value))
         while len(self.objects) > 16:
-            self.objects.pop(next(iter(self.objects)))
+            disposable = next((k for k, (_, target, value) in self.objects.items()
+                               if 'topic' not in target and not value.get('interfaces')), next(iter(self.objects)))
+            self.objects.pop(disposable)
 
     def _observed_documents(self):
         docs = self.advertised()
@@ -91,6 +99,17 @@ class CapabilityCatalog:
                     if len(docs) == 256:
                         return docs
                 continue
+            for child in value.get('children', [])[:32]:
+                if (type(child) is str and child and all(
+                        part and re.fullmatch(r'[A-Za-z0-9_]+', part) for part in child.split('/'))):
+                    path = endpoint['path'].rstrip('/') + '/' + child
+                    if len(path) <= 512:
+                        target = {**endpoint, 'path': path}
+                        docs.append({'target': target, 'kind': 'object', 'name': path,
+                                     'detail': {}, 'description': 'Inspect this observed child object to discover operations.',
+                                     'candidate': {'name': 'dbus_inspect', 'argument': target}})
+                        if len(docs) >= 256:
+                            return docs[:256]
             for interface in value.get('interfaces', [])[:32]:
                 target = {**endpoint, 'interface': interface['name']}
                 for kind, members in (('method', interface.get('methods', [])), ('property', interface.get('properties', []))):
@@ -113,6 +132,18 @@ class CapabilityCatalog:
                                                  **target, 'property': name, 'valueJson': json.dumps(setting)}}})
                                 if len(docs) == 256:
                                     return docs
+        inspected = {(endpoint.get('bus'), endpoint.get('destination'), endpoint.get('path'))
+                     for _, endpoint, _ in self.objects.values()}
+        for scope, names in self.services.items():
+            for name in names:
+                if (scope, name, '/') in inspected:
+                    continue
+                target = {'bus': scope, 'destination': name, 'path': '/'}
+                docs.append({'target': target, 'kind': 'service', 'name': name, 'detail': {},
+                             'description': 'Running service; inspect its root to discover supported operations. The name does not prove functionality.',
+                             'candidate': {'name': 'dbus_inspect', 'argument': target}})
+                if len(docs) >= 256:
+                    return docs[:256]
         return docs
 
     def documents(self):
@@ -149,7 +180,7 @@ class CapabilityCatalog:
 
     def markdown(self):
         lines = ['# Observed D-Bus capabilities', '',
-                 'Startup observations; calls are rechecked before execution. Signatures do not prove intent or safety.' if self.max_age is None else 'Session cache; expires after five minutes. Signatures do not prove intent or safety.', '']
+                 'Observed planning hints; realtime mode discards them at the next request. Calls are rechecked before execution. Signatures do not prove intent or safety.', '']
         for doc in self.documents():
             target = doc['target']
             lines.extend([f"## {doc['kind']}: {doc['name']}", '',

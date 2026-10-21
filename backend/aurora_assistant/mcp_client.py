@@ -1,7 +1,8 @@
 """Local stdio MCP transport and exact, single-use action consent.
 
-This module never grants approval from model output. The controller explicitly
-authorizes the prepared plan after human approval. Tokens remain per action;
+The controller binds a standing routine-action policy grant or explicit human
+approval to the exact prepared plan. Destructive approval cannot be lowered by
+model confidence. Tokens remain per action;
 there is no transaction and no mutation retry.
 """
 import asyncio
@@ -47,19 +48,41 @@ class Consent:
         self.pending = {}
         self.authorized = set()
         self.active = None
+        self.system_confirmed = set()
 
     def prepare(self, plan, request):
         now = self.clock()
         self.pending = {k: v for k, v in self.pending.items() if v[0]['expires_at'] > now}
         self.authorized.intersection_update(self.pending)
+        self.system_confirmed.intersection_update(self.pending)
         if len(self.pending) >= 64:
             raise MCPFailure('mcp.pending_limit')
         token = secrets.token_hex(16)
-        plan = copy.deepcopy({**plan, 'mcp_token': token, 'expires_at': now + 120})
-        self.pending[token] = (plan, copy.deepcopy({**request, 'expires_at': now + 120}))
+        expiry = min(now + 120, plan.get('expires_at', now + 120))
+        plan = copy.deepcopy({**plan, 'mcp_token': token, 'expires_at': expiry})
+        self.pending[token] = (plan, copy.deepcopy({**request, 'expires_at': expiry}))
         return copy.deepcopy(plan)
 
-    def authorize(self, plans):
+    def apply_policy(self, plan, effect):
+        if effect not in {'ordinary', 'destructive'}:
+            raise MCPFailure('mcp.invalid_policy')
+        token = plan.get('mcp_token')
+        stored = self.pending.get(token)
+        if not stored or canonical(stored[0]) != canonical(plan) or token in self.authorized:
+            raise MCPFailure('mcp.invalid_consent')
+        from .action_policy import approval_floor
+        if approval_floor(plan):
+            effect = 'destructive'
+        self.revoke([plan])
+        return self.prepare({**plan, 'policy_effect': effect,
+                             'requires_approval': effect == 'destructive'}, stored[1])
+
+    def authorize_routine(self, plans):
+        if any(p.get('policy_effect') != 'ordinary' or p.get('requires_approval') is not False for p in plans):
+            raise MCPFailure('mcp.human_approval_required')
+        self.authorize(plans)
+
+    def authorize(self, plans, system_confirmed=False):
         if not 1 <= len(plans) <= 4:
             raise MCPFailure('mcp.invalid_plan')
         selected = []
@@ -73,11 +96,14 @@ class Consent:
                 raise MCPFailure('mcp.invalid_consent')
             selected.append(token)
         self.authorized.update(selected)
+        if system_confirmed:
+            self.system_confirmed.update(selected)
 
     def revoke(self, plans):
         for plan in plans:
             token = plan.get('mcp_token')
             self.authorized.discard(token)
+            self.system_confirmed.discard(token)
             self.pending.pop(token, None)
 
     def begin(self, plan):
@@ -85,13 +111,17 @@ class Consent:
             raise MCPFailure('mcp.busy')
         token = plan.get('mcp_token')
         stored = self.pending.pop(token, None)
+        system_confirmed = token in self.system_confirmed
+        self.system_confirmed.discard(token)
         approved = token in self.authorized
         self.authorized.discard(token)
         if (not approved or not stored or canonical(stored[0]) != canonical(plan)
                 or self.clock() >= stored[0]['expires_at']):
             raise MCPFailure('mcp.invalid_consent')
         request = {**stored[1], 'confirmation_id': secrets.token_hex(16)}
-        self.active = {'request': request, 'expires': stored[0]['expires_at'], 'used': False, 'accepted': False}
+        self.active = {'request': request, 'expires': stored[0]['expires_at'], 'used': False, 'accepted': False,
+                       'system_confirmed': system_confirmed or stored[0].get('policy_effect') == 'ordinary'}
+        self.system_confirmed.discard(token)
         return copy.deepcopy(request)
 
     async def elicit(self, message):
@@ -106,7 +136,7 @@ class Consent:
             return False
         # Consume before awaiting a second prompt, preventing concurrent replay.
         active['used'] = True
-        if incoming['bus'] == 'system':
+        if incoming['bus'] == 'system' and not active['system_confirmed']:
             if self.second_prompt is None:
                 return False
             try:
@@ -160,7 +190,7 @@ class MCPTransport:
                     async with asyncio.timeout(10):
                         await session.initialize()
                         listed = await session.list_tools()
-                        if {t.name for t in listed.tools} != {'describe_object', 'call_method', 'set_property', 'list_services', 'read_property'}:
+                        if {t.name for t in listed.tools} != {'describe_object', 'call_method', 'set_property', 'list_services', 'read_property', 'desktop_query'}:
                             raise MCPFailure('mcp.contract_mismatch')
                     event('mcp.connected')
                     yield self
@@ -168,6 +198,7 @@ class MCPTransport:
                     self.consent.finish()
                     self.consent.pending.clear()
                     self.consent.authorized.clear()
+                    self.consent.system_confirmed.clear()
                     self.session = None
 
     async def call(self, tool, arguments):

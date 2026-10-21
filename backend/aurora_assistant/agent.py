@@ -2,23 +2,35 @@
 import json
 import asyncio
 import time
+import copy
+import re
 from .actions import validate, PlanValidationError
 from .settings import READ_ACTIONS
 from .telemetry import event, phase, failure
 
 
 class SettingsAgent:
-    def __init__(self, config, inference, desktop, approval, overlay):
+    def __init__(self, config, inference, desktop, approval, overlay, live_refresh=None, device_policy=False):
         self.config, self.inference, self.desktop = config, inference, desktop
         self.approval, self.overlay = approval, overlay
+        self.live_refresh = live_refresh
+        self.device_policy = device_policy
+        self.voice_confirmation = False
+        self.pending_confirmation = None
 
     async def run(self, text):
         self.failed = False
         self.awaiting_reply = False
         if len(text) > 8192:
+            self.cancel_confirmation()
             self.failed = True
             return 'The request is too long to process safely. Please shorten it. No actions were run.'
+        if self.confirmation_pending:
+            return await self._answer_confirmation(text)
         evidence = []
+        if self.live_refresh is not None:
+            evidence.extend(await self.live_refresh() or [])
+        initial_evidence_count = len(evidence)
         kev = self.config.get('kev', {})
         kev_active = kev.get('enable', False)
         kev_rounds = 0
@@ -57,7 +69,7 @@ class SettingsAgent:
                 kev_active = False
                 continue
             if any(a.name == 'web_search' for a in actions):
-                if len(actions) != 1 or evidence:
+                if len(actions) != 1 or len(evidence) > initial_evidence_count:
                     return 'Please ask the web question separately from desktop actions.'
                 return await self._search(text, actions[0].argument)
             if not actions:
@@ -86,7 +98,7 @@ class SettingsAgent:
                 evidence.append({'preparation_error': str(exc)[:1000], 'actions': plan['actions']})
                 continue  # No mutations have occurred; let the larger model resolve it.
             return await self._execute_plan(text, prepared)
-        return 'The discovery limit was reached. No changes were made. Please narrow the request.'
+        return 'No suitable D-Bus operation was found within the search limit. No changes were made. This does not establish whether the application is installed.'
 
     async def _observe(self, actions):
         observations = []
@@ -137,39 +149,148 @@ class SettingsAgent:
                 review = {'decision': 'ask', 'reason': 'The local reviewer is unavailable or returned an invalid result.'}
         return review
 
-    async def _execute_plan(self, text, prepared):
-        review = await self._review(text, prepared)
-        event("review.result", decision=review["decision"])
-        if review['decision'] == 'block':
-            event('apply.failure.reason', reason='policy', completed_actions=0)
-            return 'No changes were made. ' + review['reason']
-        # Desktop tokens use this host's monotonic clock. Leave a short
-        # transport margin and never ask for approval beyond plan validity.
-        deadlines = [p['expires_at'] for p in prepared if 'expires_at' in p]
-        deadline = min(deadlines) - 2 if deadlines else float('inf')
-        if time.monotonic() >= deadline:
-            event('apply.failure.reason', reason='expired', completed_actions=0)
-            self.failed = True
-            return 'The prepared plan expired during review. No actions were run. Please ask again.'
-        approved = False
-        if review['decision'] == 'ask' or any(p['requires_approval'] for p in prepared):
-            approved = await self.approval.request(
-                {'request': text, 'plan': prepared, 'review': review}, self.overlay.message,
-                timeout=min(120, deadline - time.monotonic()))
-            if not approved:
-                event('apply.failure.reason', reason='not_approved', completed_actions=0)
-                return 'The change was not approved. No actions were run.'
-        if time.monotonic() >= deadline:
-            event('apply.failure.reason', reason='expired', completed_actions=0)
-            self.failed = True
-            return 'The prepared plan expired. No actions were run. Please ask again.'
-        mcp_plan = any('mcp_token' in step for step in prepared)
-        if mcp_plan:
-            if approved is not True:
-                self.failed = True
-                return 'The MCP plan requires explicit approval. No actions were run.'
-            self.desktop.authorize_plan(prepared)
+    @property
+    def confirmation_pending(self):
+        return self.pending_confirmation is not None
+
+    def cancel_confirmation(self):
+        pending, self.pending_confirmation = self.pending_confirmation, None
+        if pending is not None:
+            self.desktop.revoke_plan(pending['prepared'])
+            self.approval.clear()
+
+    def _stage_confirmation(self, text, prepared, review, deadline, system=False):
+        # Display and speak an exact description, not a second model's paraphrase.
+        descriptions = []
+        for plan in prepared:
+            if 'adapter_plan' in plan:
+                description = plan['adapter_plan']['action']
+            else:
+                description = plan['action']
+            descriptions.append(json.dumps(description, ensure_ascii=False, sort_keys=True))
+        prompt = ('Confirm these destructive system-bus operations: ' if system else
+                  'This plan includes a destructive operation: ') + '; '.join(descriptions)
+        prompt += '. Say yes to approve this exact plan, or no to cancel. Proceed?'
+        if len(prompt) > 2400:
+            return None  # Oversized exact plans use the existing local control.
+        identity, future = self.approval.stage(
+            {'request': text, 'plan': prepared, 'review': review, 'system_confirmation': system},
+            timeout=min(120, max(0, deadline - time.monotonic())))
+        self.pending_confirmation = {'prepared': copy.deepcopy(prepared), 'deadline': deadline,
+            'id': identity, 'future': future, 'text': text, 'review': review, 'system': system}
+        self.awaiting_reply = True
+        return prompt
+
+    async def _answer_confirmation(self, text):
+        pending, self.pending_confirmation = self.pending_confirmation, None
+        prepared = pending['prepared']
         try:
+            answer = re.sub(r'[.!?]+$', '', text.strip().casefold()).strip()
+            if time.monotonic() >= pending['deadline']:
+                return 'The approval expired. No actions were run.'
+            if answer not in {'yes', 'yes please', 'confirm', 'proceed', 'do it'}:
+                return 'The plan was cancelled. No actions were run.'
+            future = pending['future']
+            if not future.done():
+                self.approval.dispatch({'command': 'approve', 'id': pending['id']})
+            if future.cancelled() or future.result() is not True:
+                return 'The plan was not approved. No actions were run.'
+            self.approval.clear()
+            # Keep the explicit second consent for destructive system-bus calls.
+            system_calls = any(p.get('policy_effect') == 'destructive'
+                and isinstance(p.get('action', {}).get('argument'), dict)
+                and p['action']['argument'].get('bus') == 'system' for p in prepared)
+            if system_calls and not pending['system']:
+                prompt = self._stage_confirmation(pending['text'], prepared, pending['review'],
+                                                  pending['deadline'], system=True)
+                if prompt is not None:
+                    return prompt
+                return 'This system plan is too large for spoken approval. No actions were run.'
+            return await self._apply_prepared(prepared, approved=True, system_confirmed=pending['system'])
+        finally:
+            if not self.confirmation_pending:
+                self.desktop.revoke_plan(prepared)
+                self.approval.clear()
+
+    async def _execute_plan(self, text, prepared):
+        try:
+            return await self._prepare_execution(text, prepared)
+        finally:
+            if not self.confirmation_pending and any('mcp_token' in p for p in prepared):
+                self.desktop.revoke_plan(prepared)
+
+    async def _prepare_execution(self, text, prepared):
+        if self.device_policy:
+            from .action_policy import assess
+            try:
+                effects = await assess(self.inference, text, prepared, self.config['apps'])
+                if 'unknown' in effects or 'unrequested' in effects:
+                    self.desktop.revoke_plan(prepared)
+                    return 'The available interface does not establish a suitable, understood operation for this request. No changes were made.'
+                prepared = self.desktop.apply_policy(prepared, effects)
+                review = {'decision': 'allow', 'reason': 'Requested effects assessed under device policy.'}
+            except asyncio.CancelledError:
+                self.desktop.revoke_plan(prepared)
+                raise
+            except Exception as exc:
+                self.desktop.revoke_plan(prepared)
+                failure('policy.effect_failed', exc)
+                self.failed = True
+                return 'The effects of this operation could not be checked. No actions were run.'
+        else:
+            review = await self._review(text, prepared)
+        try:
+            event("review.result", decision=review["decision"])
+            if review['decision'] == 'block':
+                event('apply.failure.reason', reason='policy', completed_actions=0)
+                return 'No changes were made. ' + review['reason']
+            # Desktop tokens use this host's monotonic clock. Leave a short
+            # transport margin and never ask for approval beyond plan validity.
+            deadlines = [p['expires_at'] for p in prepared if 'expires_at' in p]
+            deadline = min(deadlines) - 2 if deadlines else float('inf')
+            if time.monotonic() >= deadline:
+                event('apply.failure.reason', reason='expired', completed_actions=0)
+                self.failed = True
+                return 'The prepared plan expired during review. No actions were run. Please ask again.'
+            approved = False
+            if review['decision'] == 'ask' or any(p['requires_approval'] for p in prepared):
+                if self.voice_confirmation:
+                    prompt = self._stage_confirmation(text, prepared, review, deadline)
+                    if prompt is not None:
+                        return prompt
+                approved = await self.approval.request(
+                    {'request': text, 'plan': prepared, 'review': review}, self.overlay.message,
+                    timeout=min(120, deadline - time.monotonic()))
+                if not approved:
+                    event('apply.failure.reason', reason='not_approved', completed_actions=0)
+                    return 'The change was not approved. No actions were run.'
+            if time.monotonic() >= deadline:
+                event('apply.failure.reason', reason='expired', completed_actions=0)
+                self.failed = True
+                return 'The prepared plan expired. No actions were run. Please ask again.'
+            return await self._apply_prepared(prepared, approved)
+        finally:
+            if not self.confirmation_pending and any('mcp_token' in p for p in prepared):
+                self.desktop.revoke_plan(prepared)
+
+    async def _apply_prepared(self, prepared, approved, system_confirmed=False):
+        if any(time.monotonic() >= p.get('expires_at', float('inf')) - 2 for p in prepared):
+            self.desktop.revoke_plan(prepared)
+            self.failed = True
+            return 'The prepared plan expired. No actions were run.'
+        mcp_plan = any('mcp_token' in step for step in prepared)
+        try:
+            if mcp_plan:
+                if approved is True:
+                    if system_confirmed:
+                        self.desktop.authorize_plan(prepared, system_confirmed=True)
+                    else:
+                        self.desktop.authorize_plan(prepared)
+                elif self.device_policy and all(p.get('policy_effect') == 'ordinary' and not p['requires_approval'] for p in prepared):
+                    self.desktop.authorize_routine(prepared)
+                else:
+                    self.failed = True
+                    return 'The MCP plan requires explicit approval. No actions were run.'
             await self.overlay.state('executing')
             results = []
             for step in prepared:

@@ -41,8 +41,8 @@ def action_schemas():
         'dbus_list': 'List currently running services in the permitted scope of the selected bus.',
         'dbus_inspect': 'Read interfaces, signatures, properties and child paths from a live object.',
         'dbus_get': 'Read a property on an observed interface using its live signature.',
-        'dbus_set': 'Propose a typed read/write property change. valueJson contains one JSON value. Requires local approval.',
-        'dbus_call': 'Propose a live method call. argumentsJson is a positional JSON array. Requires local approval.',
+        'dbus_set': 'Propose a typed read/write property change. valueJson contains one JSON value. Execution is subject to effect policy and destructive-action approval.',
+        'dbus_call': 'Propose a live method call. argumentsJson is a positional JSON array. Execution is subject to effect policy and destructive-action approval.',
     }
     return [{**object_schema({'name': {'const': name}, 'argument': arg}), 'description': descriptions[name]}
             for name, arg in args.items()]

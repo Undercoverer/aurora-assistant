@@ -49,13 +49,18 @@ class Controller:
             try:
                 content("transcript.final", text)
                 with phase("turn"), duration("turn.end_to_end_ms", boundary="controller_lifecycle"):
-                    if self.follow_up and text.strip():
+                    spoken_approval = self.agent is not None and getattr(self.agent, 'confirmation_pending', False) is True
+                    if spoken_approval and not self.follow_up:
+                        self.agent.cancel_confirmation()
+                        spoken_approval = False
+                    if self.follow_up and text.strip() and not spoken_approval:
                         self.context.append({'user': text})
                         import json
                         request = 'Continue this clarification conversation: ' + json.dumps(self.context)
                     else:
                         self.context = [{'user': text}]
-                        self.follow_up_count = 0
+                        if not spoken_approval:
+                            self.follow_up_count = 0
                         request = text
                     self.follow_up = False
                     await self._handle(request if text.strip() else '')
@@ -66,6 +71,8 @@ class Controller:
 
     async def _handle(self, text):
         if not text.strip():
+            if self.agent is not None and getattr(self.agent, 'confirmation_pending', False) is True:
+                self.agent.cancel_confirmation()
             self.context = []
             await self.overlay.reset()
             return
@@ -132,5 +139,7 @@ class Controller:
             await asyncio.sleep(self.presentation.get("errorSeconds", 10))
         finally:
             if not self.follow_up:
+                if self.agent is not None and getattr(self.agent, 'confirmation_pending', False) is True:
+                    self.agent.cancel_confirmation()
                 self.context = []
                 await self.overlay.reset()
